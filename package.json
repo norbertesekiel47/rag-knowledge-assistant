@@ -10,12 +10,19 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^6.36.1",
+    "@langchain/textsplitters": "^1.0.1",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.87.1",
+    "gray-matter": "^4.0.3",
+    "langchain": "^1.1.5",
     "next": "16.0.8",
+    "pdf-parse": "^2.4.5",
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "react-dropzone": "^14.3.8",
+    "remark": "^15.0.1",
+    "remark-html": "^16.0.1",
+    "strip-markdown": "^6.0.0",
     "svix": "^1.82.0"
   },
   "devDependencies": {

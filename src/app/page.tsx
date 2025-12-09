@@ -11,7 +11,7 @@ export default async function HomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+    <div className="min-h-screen bg-linear-to-b from-gray-50 to-white">
       <div className="mx-auto max-w-4xl px-4 py-16">
         <h1 className="text-5xl font-bold text-gray-900 text-center mb-6">
           Knowledge Assistant

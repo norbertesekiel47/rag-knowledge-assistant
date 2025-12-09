@@ -8,6 +8,7 @@ import {
   getFileType,
   ALLOWED_EXTENSIONS,
 } from "@/lib/constants";
+import { processDocument } from "@/lib/processing/processor";
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,7 +34,6 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Server-side validation
-    // Check file size
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         { error: `File size exceeds ${MAX_FILE_SIZE_DISPLAY} limit` },
@@ -41,7 +41,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check file type
     if (!isAllowedMimeType(file.type)) {
       return NextResponse.json(
         { error: `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}` },
@@ -62,7 +61,6 @@ export async function POST(request: NextRequest) {
     const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
     const storagePath = `${userId}/${timestamp}_${sanitizedFilename}`;
 
-    // Convert File to ArrayBuffer for Supabase
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
@@ -73,7 +71,7 @@ export async function POST(request: NextRequest) {
       .from("documents")
       .upload(storagePath, buffer, {
         contentType: file.type,
-        upsert: false, // Don't overwrite existing files
+        upsert: false,
       });
 
     if (uploadError) {
@@ -89,7 +87,7 @@ export async function POST(request: NextRequest) {
       .from("documents")
       .insert({
         user_id: userId,
-        filename: file.name, // Original filename for display
+        filename: file.name,
         file_type: fileType,
         file_size: file.size,
         storage_path: storagePath,
@@ -99,9 +97,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (dbError) {
-      // Rollback: delete the uploaded file if DB insert fails
       await supabase.storage.from("documents").remove([storagePath]);
-
       console.error("Database insert error:", dbError);
       return NextResponse.json(
         { error: "Failed to create document record" },
@@ -109,7 +105,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 7. Return the created document
+    // 7. Trigger processing (non-blocking)
+    // We don't await this - it runs in the background
+    processDocument(document.id)
+      .then((result) => {
+        if (result.success) {
+          console.log(`Background processing complete: ${result.chunks.length} chunks`);
+        } else {
+          console.error(`Background processing failed: ${result.error}`);
+        }
+      })
+      .catch((error) => {
+        console.error("Background processing error:", error);
+      });
+
+    // 8. Return the document immediately (processing happens in background)
     return NextResponse.json({ document }, { status: 201 });
 
   } catch (error) {
