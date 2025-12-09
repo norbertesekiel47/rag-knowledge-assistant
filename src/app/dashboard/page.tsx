@@ -1,18 +1,24 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { SignOutButton } from "@clerk/nextjs";
+import { createServiceClient } from "@/lib/supabase/server";
 
 export default async function DashboardPage() {
-  // Get the userId from auth — this runs on the server
   const { userId } = await auth();
 
-  // Double-check auth (middleware should handle this, but defense in depth)
   if (!userId) {
     redirect("/sign-in");
   }
 
-  // Get full user object for display
   const user = await currentUser();
+  
+  // Test: Fetch user from Supabase
+  const supabase = createServiceClient();
+  const { data: supabaseUser, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("id", userId)
+    .single();
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
@@ -33,20 +39,28 @@ export default async function DashboardPage() {
             Welcome, {user?.firstName || "User"}!
           </h2>
           <p className="text-gray-600 mb-4">
-            Your personal AI knowledge base is ready. In the next phases, you will be able to:
+            Your personal AI knowledge base is ready.
           </p>
-          <ul className="list-disc list-inside text-gray-600 space-y-2">
-            <li>Upload documents (PDF, Markdown, Text)</li>
-            <li>Search your knowledge base semantically</li>
-            <li>Chat with AI that understands your documents</li>
-          </ul>
 
-          <div className="mt-6 p-4 bg-blue-50 rounded-md">
+          <div className="mt-6 p-4 bg-blue-50 rounded-md space-y-2">
             <p className="text-sm text-blue-800">
-              <strong>Debug Info (remove in production):</strong>
-              <br />
-              User ID: <code className="bg-blue-100 px-1 rounded">{userId}</code>
+              <strong>Debug Info:</strong>
             </p>
+            <p className="text-sm text-blue-700">
+              Clerk User ID: <code className="bg-blue-100 px-1 rounded">{userId}</code>
+            </p>
+            <p className="text-sm text-blue-700">
+              Supabase Sync: {supabaseUser ? (
+                <span className="text-green-600 font-medium">✓ Connected</span>
+              ) : (
+                <span className="text-red-600 font-medium">✗ Not found ({error?.message})</span>
+              )}
+            </p>
+            {supabaseUser && (
+              <p className="text-sm text-blue-700">
+                Supabase Email: <code className="bg-blue-100 px-1 rounded">{supabaseUser.email}</code>
+              </p>
+            )}
           </div>
         </div>
       </div>
