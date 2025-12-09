@@ -15,6 +15,7 @@
     "next": "16.0.8",
     "react": "19.2.1",
     "react-dom": "19.2.1",
+    "react-dropzone": "^14.3.8",
     "svix": "^1.82.0"
   },
   "devDependencies": {
