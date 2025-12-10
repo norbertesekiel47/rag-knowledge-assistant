@@ -2,6 +2,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { parseDocument } from "./parsers";
 import { chunkDocument, DocumentChunk } from "./chunker";
 import { storeChunks, deleteDocumentChunks } from "@/lib/weaviate/vectors";
+import { EmbeddingProvider, DEFAULT_EMBEDDING_PROVIDER } from "@/lib/embeddings";
 
 export interface ProcessingResult {
   success: boolean;
@@ -14,7 +15,8 @@ export interface ProcessingResult {
  * Process a single document: download, parse, chunk, embed, and store
  */
 export async function processDocument(
-  documentId: string
+  documentId: string,
+  embeddingProvider: EmbeddingProvider = DEFAULT_EMBEDDING_PROVIDER
 ): Promise<ProcessingResult> {
   const supabase = createServiceClient();
 
@@ -69,7 +71,12 @@ export async function processDocument(
     }
 
     // 7. Delete any existing chunks for this document (in case of reprocessing)
-    await deleteDocumentChunks(documentId);
+    try {
+      await deleteDocumentChunks(documentId, embeddingProvider);
+    } catch {
+      // Collection might not exist yet, that's OK
+      console.log("No existing chunks to delete (collection may not exist yet)");
+    }
 
     // 8. Store chunks with embeddings in Weaviate
     const chunksToStore = chunks.map((chunk) => ({
@@ -81,7 +88,7 @@ export async function processDocument(
       chunkIndex: chunk.chunkIndex,
     }));
 
-    await storeChunks(chunksToStore);
+    await storeChunks(chunksToStore, embeddingProvider);
 
     // 9. Update document status to processed
     const { error: updateError } = await supabase
@@ -97,7 +104,7 @@ export async function processDocument(
     }
 
     console.log(
-      `Document ${documentId} processed: ${chunks.length} chunks embedded and stored`
+      `Document ${documentId} processed: ${chunks.length} chunks embedded and stored (${embeddingProvider})`
     );
 
     return {
@@ -105,7 +112,6 @@ export async function processDocument(
       documentId,
       chunks,
     };
-
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
@@ -134,7 +140,8 @@ export async function processDocument(
  * Process all pending documents for a user
  */
 export async function processPendingDocuments(
-  userId: string
+  userId: string,
+  embeddingProvider: EmbeddingProvider = DEFAULT_EMBEDDING_PROVIDER
 ): Promise<ProcessingResult[]> {
   const supabase = createServiceClient();
 
@@ -154,7 +161,7 @@ export async function processPendingDocuments(
   }
 
   const results = await Promise.all(
-    pendingDocs.map((doc) => processDocument(doc.id))
+    pendingDocs.map((doc) => processDocument(doc.id, embeddingProvider))
   );
 
   return results;

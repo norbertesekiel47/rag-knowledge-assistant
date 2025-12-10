@@ -8,6 +8,7 @@ import {
   LLMMessage,
   RAGContext,
 } from "@/lib/llm";
+import { EmbeddingProvider, DEFAULT_EMBEDDING_PROVIDER } from "@/lib/embeddings";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -16,13 +17,13 @@ interface ChatRequest {
   message: string;
   provider: LLMProvider;
   conversationHistory?: LLMMessage[];
+  embeddingProvider?: EmbeddingProvider;
 }
 
 const VALID_PROVIDERS: LLMProvider[] = ["llama-70b", "llama-8b", "qwen-32b"];
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Verify authentication
     const { userId } = await auth();
 
     if (!userId) {
@@ -32,9 +33,13 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 2. Parse request body
     const body: ChatRequest = await request.json();
-    const { message, provider, conversationHistory = [] } = body;
+    const {
+      message,
+      provider,
+      conversationHistory = [],
+      embeddingProvider = DEFAULT_EMBEDDING_PROVIDER,
+    } = body;
 
     if (!message || typeof message !== "string") {
       return new Response(JSON.stringify({ error: "Message is required" }), {
@@ -55,10 +60,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Search for relevant context
-    const searchResults = await searchChunks(message, userId, 5);
+    // Search for relevant context using selected embedding provider
+    const searchResults = await searchChunks(message, userId, embeddingProvider, 5);
 
-    // 4. Build RAG context
     const contexts: RAGContext[] = searchResults.map((result) => ({
       content: result.content,
       documentId: result.documentId,
@@ -67,21 +71,17 @@ export async function POST(request: NextRequest) {
       score: result.score,
     }));
 
-    // 5. Build system prompt with context
     const systemPrompt = buildRAGPrompt(contexts);
 
-    // 6. Prepare messages
     const messages: LLMMessage[] = [
       ...conversationHistory,
       { role: "user", content: message },
     ];
 
-    // 7. Create streaming response
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream({
       async start(controller) {
-        // Send sources first
         const sourcesData = JSON.stringify({
           type: "sources",
           sources: contexts.map((ctx) => ({
@@ -94,7 +94,6 @@ export async function POST(request: NextRequest) {
         });
         controller.enqueue(encoder.encode(`data: ${sourcesData}\n\n`));
 
-        // Stream LLM response
         await streamLLMResponse(
           provider,
           systemPrompt,

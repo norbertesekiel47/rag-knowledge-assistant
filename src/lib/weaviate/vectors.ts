@@ -1,6 +1,10 @@
 import { getWeaviateClient } from "./client";
-import { COLLECTION_NAME } from "./schema";
-import { generateEmbeddings, generateQueryEmbedding } from "../embeddings/voyage";
+import { getCollectionName } from "./schema";
+import {
+  generateEmbeddings,
+  generateQueryEmbedding,
+  EmbeddingProvider,
+} from "../embeddings";
 
 export interface ChunkWithEmbedding {
   content: string;
@@ -22,17 +26,21 @@ export interface SearchResult {
 /**
  * Store document chunks with their embeddings in Weaviate
  */
-export async function storeChunks(chunks: ChunkWithEmbedding[]): Promise<void> {
+export async function storeChunks(
+  chunks: ChunkWithEmbedding[],
+  provider: EmbeddingProvider
+): Promise<void> {
   if (chunks.length === 0) {
     return;
   }
 
   const client = await getWeaviateClient();
-  const collection = client.collections.get(COLLECTION_NAME);
+  const collectionName = getCollectionName(provider);
+  const collection = client.collections.get(collectionName);
 
   // Generate embeddings for all chunks
   const texts = chunks.map((chunk) => chunk.content);
-  const embeddings = await generateEmbeddings(texts);
+  const embeddings = await generateEmbeddings(texts, provider);
 
   // Insert objects one by one with vectors
   for (let i = 0; i < chunks.length; i++) {
@@ -52,7 +60,7 @@ export async function storeChunks(chunks: ChunkWithEmbedding[]): Promise<void> {
     });
   }
 
-  console.log(`Successfully stored ${chunks.length} chunks in Weaviate`);
+  console.log(`Successfully stored ${chunks.length} chunks in Weaviate (${collectionName})`);
 }
 
 /**
@@ -61,15 +69,17 @@ export async function storeChunks(chunks: ChunkWithEmbedding[]): Promise<void> {
 export async function searchChunks(
   query: string,
   userId: string,
+  provider: EmbeddingProvider,
   limit: number = 5
 ): Promise<SearchResult[]> {
   const client = await getWeaviateClient();
-  const collection = client.collections.get(COLLECTION_NAME);
+  const collectionName = getCollectionName(provider);
+  const collection = client.collections.get(collectionName);
 
   // Generate query embedding
-  const queryEmbedding = await generateQueryEmbedding(query);
+  const queryEmbedding = await generateQueryEmbedding(query, provider);
 
-  // Search with user filter using byProperty syntax
+  // Search with user filter
   const response = await collection.query.nearVector(queryEmbedding, {
     limit,
     returnMetadata: ["distance"],
@@ -82,7 +92,6 @@ export async function searchChunks(
     documentId: obj.properties.documentId as string,
     filename: obj.properties.filename as string,
     chunkIndex: obj.properties.chunkIndex as number,
-    // Convert distance to similarity score (0-1, higher is better)
     score: 1 - (obj.metadata?.distance ?? 0),
   }));
 }
@@ -90,27 +99,35 @@ export async function searchChunks(
 /**
  * Delete all chunks for a specific document
  */
-export async function deleteDocumentChunks(documentId: string): Promise<void> {
+export async function deleteDocumentChunks(
+  documentId: string,
+  provider: EmbeddingProvider
+): Promise<void> {
   const client = await getWeaviateClient();
-  const collection = client.collections.get(COLLECTION_NAME);
+  const collectionName = getCollectionName(provider);
+  const collection = client.collections.get(collectionName);
 
   await collection.data.deleteMany(
     collection.filter.byProperty("documentId").equal(documentId)
   );
 
-  console.log(`Deleted chunks for document ${documentId}`);
+  console.log(`Deleted chunks for document ${documentId} from ${collectionName}`);
 }
 
 /**
  * Delete all chunks for a specific user
  */
-export async function deleteUserChunks(userId: string): Promise<void> {
+export async function deleteUserChunks(
+  userId: string,
+  provider: EmbeddingProvider
+): Promise<void> {
   const client = await getWeaviateClient();
-  const collection = client.collections.get(COLLECTION_NAME);
+  const collectionName = getCollectionName(provider);
+  const collection = client.collections.get(collectionName);
 
   await collection.data.deleteMany(
     collection.filter.byProperty("userId").equal(userId)
   );
 
-  console.log(`Deleted all chunks for user ${userId}`);
+  console.log(`Deleted all chunks for user ${userId} from ${collectionName}`);
 }

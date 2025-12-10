@@ -8,11 +8,13 @@ import {
   MAX_FILE_SIZE_DISPLAY,
   ALLOWED_FILE_TYPES,
 } from "@/lib/constants";
+import { EmbeddingProvider } from "@/lib/embeddings/config";
 import type { Document } from "@/lib/supabase/types";
 
 interface FileUploadProps {
   onUploadComplete: (document: Document) => void;
   onUploadError: (error: string) => void;
+  embeddingProvider: EmbeddingProvider;
 }
 
 interface UploadingFile {
@@ -22,11 +24,14 @@ interface UploadingFile {
   error?: string;
 }
 
-export function FileUpload({ onUploadComplete, onUploadError }: FileUploadProps) {
+export function FileUpload({
+  onUploadComplete,
+  onUploadError,
+  embeddingProvider,
+}: FileUploadProps) {
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
 
   const uploadFile = async (file: File) => {
-    // Add file to uploading state
     setUploadingFiles((prev) => [
       ...prev,
       { file, progress: 0, status: "uploading" },
@@ -35,6 +40,7 @@ export function FileUpload({ onUploadComplete, onUploadError }: FileUploadProps)
     try {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("embeddingProvider", embeddingProvider);
 
       const response = await fetch("/api/documents", {
         method: "POST",
@@ -47,25 +53,21 @@ export function FileUpload({ onUploadComplete, onUploadError }: FileUploadProps)
         throw new Error(data.error || "Upload failed");
       }
 
-      // Update file status to success
       setUploadingFiles((prev) =>
         prev.map((f) =>
           f.file === file ? { ...f, progress: 100, status: "success" } : f
         )
       );
 
-      // Notify parent component
       onUploadComplete(data.document);
 
-      // Remove from uploading list after a delay
       setTimeout(() => {
         setUploadingFiles((prev) => prev.filter((f) => f.file !== file));
       }, 2000);
-
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Upload failed";
+      const errorMessage =
+        error instanceof Error ? error.message : "Upload failed";
 
-      // Update file status to error
       setUploadingFiles((prev) =>
         prev.map((f) =>
           f.file === file ? { ...f, status: "error", error: errorMessage } : f
@@ -76,25 +78,27 @@ export function FileUpload({ onUploadComplete, onUploadError }: FileUploadProps)
     }
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: any[]) => {
-    // Handle rejected files
-    rejectedFiles.forEach((rejection) => {
-      const error = rejection.errors[0];
-      if (error.code === "file-too-large") {
-        onUploadError(`${rejection.file.name}: File exceeds ${MAX_FILE_SIZE_DISPLAY}`);
-      } else if (error.code === "file-invalid-type") {
-        onUploadError(`${rejection.file.name}: Invalid file type`);
-      } else {
-        onUploadError(`${rejection.file.name}: ${error.message}`);
-      }
-    });
+  const onDrop = useCallback(
+    (acceptedFiles: File[], rejectedFiles: { file: File; errors: { code: string; message: string }[] }[]) => {
+      rejectedFiles.forEach((rejection) => {
+        const error = rejection.errors[0];
+        if (error.code === "file-too-large") {
+          onUploadError(
+            `${rejection.file.name}: File exceeds ${MAX_FILE_SIZE_DISPLAY}`
+          );
+        } else if (error.code === "file-invalid-type") {
+          onUploadError(`${rejection.file.name}: Invalid file type`);
+        } else {
+          onUploadError(`${rejection.file.name}: ${error.message}`);
+        }
+      });
 
-    // Upload accepted files
-    acceptedFiles.forEach((file) => {
-      uploadFile(file);
-    });
-  }, [onUploadError]);
+      acceptedFiles.forEach((file) => {
+        uploadFile(file);
+      });
+    },
+    [embeddingProvider, onUploadError]
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -116,16 +120,19 @@ export function FileUpload({ onUploadComplete, onUploadError }: FileUploadProps)
         className={`
           border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
           transition-colors duration-200
-          ${isDragActive
-            ? "border-blue-500 bg-blue-50"
-            : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+          ${
+            isDragActive
+              ? "border-blue-500 bg-blue-50"
+              : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
           }
         `}
       >
         <input {...getInputProps()} />
         <div className="space-y-2">
           <svg
-            className={`mx-auto h-12 w-12 ${isDragActive ? "text-blue-500" : "text-gray-400"}`}
+            className={`mx-auto h-12 w-12 ${
+              isDragActive ? "text-blue-500" : "text-gray-400"
+            }`}
             stroke="currentColor"
             fill="none"
             viewBox="0 0 48 48"
@@ -168,7 +175,9 @@ export function FileUpload({ onUploadComplete, onUploadError }: FileUploadProps)
               `}
             >
               <div className="flex items-center space-x-3 min-w-0">
-                <FileIcon fileType={uploadingFile.file.name.split(".").pop() || ""} />
+                <FileIcon
+                  fileType={uploadingFile.file.name.split(".").pop() || ""}
+                />
                 <span className="text-sm text-gray-700 truncate">
                   {uploadingFile.file.name}
                 </span>
@@ -178,7 +187,11 @@ export function FileUpload({ onUploadComplete, onUploadError }: FileUploadProps)
                   <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                 )}
                 {uploadingFile.status === "success" && (
-                  <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                  <svg
+                    className="w-5 h-5 text-green-500"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
                     <path
                       fillRule="evenodd"
                       d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
@@ -187,7 +200,9 @@ export function FileUpload({ onUploadComplete, onUploadError }: FileUploadProps)
                   </svg>
                 )}
                 {uploadingFile.status === "error" && (
-                  <span className="text-sm text-red-600">{uploadingFile.error}</span>
+                  <span className="text-sm text-red-600">
+                    {uploadingFile.error}
+                  </span>
                 )}
               </div>
             </div>
@@ -198,7 +213,6 @@ export function FileUpload({ onUploadComplete, onUploadError }: FileUploadProps)
   );
 }
 
-// Simple file icon component
 function FileIcon({ fileType }: { fileType: string }) {
   const colors: Record<string, string> = {
     pdf: "text-red-500",
@@ -207,7 +221,7 @@ function FileIcon({ fileType }: { fileType: string }) {
   };
 
   return (
-    <div className={`flex-shrink-0 ${colors[fileType] || "text-gray-400"}`}>
+    <div className={`shrink-0 ${colors[fileType] || "text-gray-400"}`}>
       <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
         <path
           fillRule="evenodd"

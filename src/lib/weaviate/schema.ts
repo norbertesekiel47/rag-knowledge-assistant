@@ -1,6 +1,5 @@
 import { getWeaviateClient } from "./client";
-
-export const COLLECTION_NAME = "DocumentChunk";
+import { EmbeddingProvider, EMBEDDING_CONFIGS, getCollectionName } from "../embeddings/config";
 
 export interface DocumentChunkProperties {
   content: string;
@@ -12,22 +11,23 @@ export interface DocumentChunkProperties {
 }
 
 /**
- * Initialize the Weaviate schema (create collection if it doesn't exist)
+ * Initialize the Weaviate schema for a specific embedding provider
  */
-export async function initializeWeaviateSchema(): Promise<void> {
+export async function initializeWeaviateSchema(provider: EmbeddingProvider): Promise<void> {
   const client = await getWeaviateClient();
+  const collectionName = getCollectionName(provider);
 
   // Check if collection already exists
-  const exists = await client.collections.exists(COLLECTION_NAME);
+  const exists = await client.collections.exists(collectionName);
 
   if (exists) {
-    console.log(`Collection '${COLLECTION_NAME}' already exists`);
+    console.log(`Collection '${collectionName}' already exists`);
     return;
   }
 
   // Create the collection
   await client.collections.create({
-    name: COLLECTION_NAME,
+    name: collectionName,
     properties: [
       {
         name: "content",
@@ -66,9 +66,19 @@ export async function initializeWeaviateSchema(): Promise<void> {
         description: "Index of chunk within document",
       },
     ],
-    // We'll provide our own vectors from Voyage AI
     vectorizers: [],
   });
 
-  console.log(`Collection '${COLLECTION_NAME}' created successfully`);
+  console.log(`Collection '${collectionName}' created successfully`);
 }
+
+/**
+ * Initialize schemas for all embedding providers
+ */
+export async function initializeAllSchemas(): Promise<void> {
+  for (const provider of Object.keys(EMBEDDING_CONFIGS) as EmbeddingProvider[]) {
+    await initializeWeaviateSchema(provider);
+  }
+}
+
+export { getCollectionName };

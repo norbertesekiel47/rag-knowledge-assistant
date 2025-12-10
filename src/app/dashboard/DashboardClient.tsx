@@ -5,7 +5,17 @@ import { FileUpload } from "@/components/upload/FileUpload";
 import { DocumentList } from "@/components/documents/DocumentList";
 import { SearchBox } from "@/components/search/SearchBox";
 import { ChatInterface } from "@/components/chat/ChatInterface";
+import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import type { Document } from "@/lib/supabase/types";
+import { EmbeddingSettings } from "@/components/settings/EmbeddingSettings";
+import { EmbeddingProvider, DEFAULT_EMBEDDING_PROVIDER } from "@/lib/embeddings/config";
+
+interface ChatSession {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
 
 interface DashboardClientProps {
   initialDocuments: Document[];
@@ -15,11 +25,41 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
   const [documents, setDocuments] = useState<Document[]>(initialDocuments);
   const [error, setError] = useState<string | null>(null);
   const [setupStatus, setSetupStatus] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"chat" | "search">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "search" | "documents">("chat");
+  const [embeddingProvider, setEmbeddingProvider] = useState<EmbeddingProvider>(DEFAULT_EMBEDDING_PROVIDER);
+
+  // Chat session state
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(true);
 
   const hasPendingDocuments = documents.some(
     (doc) => doc.status === "pending" || doc.status === "processing"
   );
+
+  const hasProcessedDocuments = documents.some(
+    (doc) => doc.status === "processed"
+  );
+
+  // Load chat sessions on mount
+  useEffect(() => {
+    loadSessions();
+  }, []);
+
+  const loadSessions = async () => {
+    setIsLoadingSessions(true);
+    try {
+      const response = await fetch("/api/chat/sessions");
+      if (response.ok) {
+        const data = await response.json();
+        setSessions(data.sessions);
+      }
+    } catch (error) {
+      console.error("Failed to load sessions:", error);
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  };
 
   const refreshDocuments = useCallback(async () => {
     try {
@@ -56,9 +96,7 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
   const handleSetupWeaviate = async () => {
     setSetupStatus("Initializing...");
     try {
-      const response = await fetch("/api/setup/weaviate", {
-        method: "POST",
-      });
+      const response = await fetch("/api/setup/weaviate", { method: "POST" });
       const data = await response.json();
 
       if (response.ok) {
@@ -66,146 +104,219 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
       } else {
         setSetupStatus(`✗ Error: ${data.error}`);
       }
-    } catch (err) {
+    } catch {
       setSetupStatus("✗ Failed to connect to setup endpoint");
     }
-
     setTimeout(() => setSetupStatus(null), 5000);
   };
 
-  const hasProcessedDocuments = documents.some(
-    (doc) => doc.status === "processed"
-  );
+  const handleNewChat = () => {
+    setCurrentSessionId(null);
+    setActiveTab("chat");
+  };
+
+  const handleSelectSession = (sessionId: string) => {
+    setCurrentSessionId(sessionId);
+    setActiveTab("chat");
+  };
+
+  const handleDeleteSession = async (sessionId: string) => {
+    try {
+      const response = await fetch(`/api/chat/sessions/${sessionId}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+        if (currentSessionId === sessionId) {
+          setCurrentSessionId(null);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to delete session:", error);
+    }
+  };
+
+  const handleSessionCreated = (sessionId: string) => {
+    setCurrentSessionId(sessionId);
+    loadSessions(); // Refresh the sessions list
+  };
 
   return (
-    <div className="space-y-8">
-      {/* Setup Section */}
-      <section className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-medium text-blue-900">
-              First-time Setup
-            </h3>
-            <p className="text-sm text-blue-700">
-              Initialize the vector database schema (only needed once)
-            </p>
-          </div>
-          <button
-            onClick={handleSetupWeaviate}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
-          >
-            Initialize Weaviate
-          </button>
-        </div>
-        {setupStatus && (
-          <p
-            className={`mt-2 text-sm ${
-              setupStatus.startsWith("✓")
-                ? "text-green-600"
-                : setupStatus.startsWith("✗")
-                ? "text-red-600"
-                : "text-blue-600"
-            }`}
-          >
-            {setupStatus}
-          </p>
-        )}
-      </section>
-
-      {/* Chat/Search Section */}
-      <section>
-        {/* Tabs */}
-        <div className="flex space-x-1 mb-4 border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab("chat")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === "chat"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            💬 Chat
-          </button>
-          <button
-            onClick={() => setActiveTab("search")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === "search"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            🔍 Search
-          </button>
-        </div>
-
-        {/* Tab Content */}
-        {hasProcessedDocuments ? (
-          activeTab === "chat" ? (
-            <ChatInterface />
-          ) : (
-            <SearchBox />
-          )
-        ) : (
-          <div className="p-8 bg-gray-50 border border-gray-200 rounded-lg text-center">
-            <p className="text-gray-600">
-              Upload and process documents to enable chat and search.
-            </p>
-          </div>
-        )}
-      </section>
-
-      {/* Upload Section */}
-      <section>
-        <h2 className="text-lg font-medium text-gray-900 mb-4">
-          Upload Documents
-        </h2>
-        <FileUpload
-          onUploadComplete={handleUploadComplete}
-          onUploadError={handleUploadError}
+    <div className="flex h-[calc(100vh-73px)]">
+      {/* Sidebar */}
+      <div className="w-64 shrink-0">
+        <ChatSidebar
+          sessions={sessions}
+          currentSessionId={currentSessionId}
+          onSelectSession={handleSelectSession}
+          onNewChat={handleNewChat}
+          onDeleteSession={handleDeleteSession}
+          isLoading={isLoadingSessions}
         />
-        {error && (
-          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-600">{error}</p>
-          </div>
-        )}
-      </section>
+      </div>
 
-      {/* Documents Section */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-medium text-gray-900">Your Documents</h2>
-          <div className="flex items-center space-x-3">
-            {hasPendingDocuments && (
-              <span className="text-sm text-blue-600 flex items-center">
-                <svg
-                  className="w-4 h-4 mr-1 animate-spin"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                  />
-                </svg>
-                Processing...
-              </span>
+      {/* Main Content */}
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-4xl mx-auto space-y-6">
+          {/* Setup Section */}
+          <section className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-blue-900">First-time Setup</h3>
+                <p className="text-sm text-blue-700">
+                  Initialize the vector database schema (only needed once)
+                </p>
+              </div>
+              <button
+                onClick={handleSetupWeaviate}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
+              >
+                Initialize Weaviate
+              </button>
+            </div>
+            {setupStatus && (
+              <p
+                className={`mt-2 text-sm ${
+                  setupStatus.startsWith("✓")
+                    ? "text-green-600"
+                    : setupStatus.startsWith("✗")
+                    ? "text-red-600"
+                    : "text-blue-600"
+                }`}
+              >
+                {setupStatus}
+              </p>
             )}
-            <span className="text-sm text-gray-500">
-              {documents.length} document{documents.length !== 1 ? "s" : ""}
-            </span>
+          </section>
+
+          {/* Tabs */}
+          <div className="flex space-x-1 border-b border-gray-200">
+            <button
+              onClick={() => setActiveTab("chat")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "chat"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              💬 Chat
+            </button>
+            <button
+              onClick={() => setActiveTab("search")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "search"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              🔍 Search
+            </button>
+            <button
+              onClick={() => setActiveTab("documents")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "documents"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              📄 Documents
+            </button>
           </div>
+
+          {/* Tab Content */}
+          {activeTab === "chat" && (
+            hasProcessedDocuments ? (
+              <ChatInterface
+                sessionId={currentSessionId}
+                onSessionCreated={handleSessionCreated}
+                embeddingProvider={embeddingProvider}
+              />
+            ) : (
+              <div className="p-8 bg-gray-50 border border-gray-200 rounded-lg text-center">
+                <p className="text-gray-600">
+                  Upload and process documents to enable chat.
+                </p>
+              </div>
+            )
+          )}
+
+          {activeTab === "search" && (
+            hasProcessedDocuments ? (
+              <SearchBox />
+            ) : (
+              <div className="p-8 bg-gray-50 border border-gray-200 rounded-lg text-center">
+                <p className="text-gray-600">
+                  Upload and process documents to enable search.
+                </p>
+              </div>
+            )
+          )}
+
+          {activeTab === "documents" && (
+            <div className="space-y-6">
+               {/* Embedding Settings */}
+              <EmbeddingSettings
+                currentProvider={embeddingProvider}
+                onProviderChange={setEmbeddingProvider}
+              />
+              {/* Upload Section */}
+              <section>
+                <h2 className="text-lg font-medium text-gray-900 mb-4">
+                  Upload Documents
+                </h2>
+                <FileUpload
+                  onUploadComplete={handleUploadComplete}
+                  onUploadError={handleUploadError}
+                  embeddingProvider={embeddingProvider}
+                />
+                {error && (
+                  <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-600">{error}</p>
+                  </div>
+                )}
+              </section>
+
+              {/* Documents List */}
+              <section>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-medium text-gray-900">Your Documents</h2>
+                  <div className="flex items-center space-x-3">
+                    {hasPendingDocuments && (
+                      <span className="text-sm text-blue-600 flex items-center">
+                        <svg
+                          className="w-4 h-4 mr-1 animate-spin"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                          />
+                        </svg>
+                        Processing...
+                      </span>
+                    )}
+                    <span className="text-sm text-gray-500">
+                      {documents.length} document{documents.length !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                </div>
+                <DocumentList documents={documents} />
+              </section>
+            </div>
+          )}
         </div>
-        <DocumentList documents={documents} />
-      </section>
+      </div>
     </div>
   );
 }

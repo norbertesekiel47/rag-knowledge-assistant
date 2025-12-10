@@ -9,8 +9,8 @@ import {
   getFileType,
 } from "@/lib/constants";
 import { processDocument } from "@/lib/processing/processor";
+import { EmbeddingProvider, DEFAULT_EMBEDDING_PROVIDER } from "@/lib/embeddings";
 
-// Map our file types to proper MIME types for storage
 const FILE_TYPE_TO_MIME: Record<string, string> = {
   pdf: "application/pdf",
   txt: "text/plain",
@@ -19,28 +19,20 @@ const FILE_TYPE_TO_MIME: Record<string, string> = {
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. Verify authentication
     const { userId } = await auth();
 
     if (!userId) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // 2. Parse the form data
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
+    const embeddingProvider = (formData.get("embeddingProvider") as EmbeddingProvider) || DEFAULT_EMBEDDING_PROVIDER;
 
     if (!file) {
-      return NextResponse.json(
-        { error: "No file provided" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    // 3. Server-side validation
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         { error: `File size exceeds ${MAX_FILE_SIZE_DISPLAY} limit` },
@@ -48,7 +40,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check file type using both MIME type and extension
     if (!isAllowedFile(file.type, file.name)) {
       return NextResponse.json(
         { error: `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}` },
@@ -64,10 +55,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get the correct MIME type for storage
     const mimeType = FILE_TYPE_TO_MIME[fileType] || "application/octet-stream";
-
-    // 4. Prepare file for upload
     const timestamp = Date.now();
     const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
     const storagePath = `${userId}/${timestamp}_${sanitizedFilename}`;
@@ -75,13 +63,12 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 5. Upload to Supabase Storage
     const supabase = createServiceClient();
 
     const { error: uploadError } = await supabase.storage
       .from("documents")
       .upload(storagePath, buffer, {
-        contentType: mimeType, // Use our determined MIME type, not the browser's
+        contentType: mimeType,
         upsert: false,
       });
 
@@ -93,7 +80,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 6. Create document record in database
     const { data: document, error: dbError } = await supabase
       .from("documents")
       .insert({
@@ -116,11 +102,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 7. Trigger processing (non-blocking)
-    processDocument(document.id)
+    // Trigger processing with selected embedding provider
+    processDocument(document.id, embeddingProvider)
       .then((result) => {
         if (result.success) {
-          console.log(`Background processing complete: ${result.chunks.length} chunks`);
+          console.log(`Background processing complete: ${result.chunks.length} chunks (${embeddingProvider})`);
         } else {
           console.error(`Background processing failed: ${result.error}`);
         }
@@ -129,9 +115,7 @@ export async function POST(request: NextRequest) {
         console.error("Background processing error:", error);
       });
 
-    // 8. Return the document immediately
     return NextResponse.json({ document }, { status: 201 });
-
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json(
@@ -141,16 +125,12 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET endpoint to fetch user's documents
 export async function GET() {
   try {
     const { userId } = await auth();
 
     if (!userId) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const supabase = createServiceClient();
@@ -170,7 +150,6 @@ export async function GET() {
     }
 
     return NextResponse.json({ documents });
-
   } catch (error) {
     console.error("Fetch error:", error);
     return NextResponse.json(
