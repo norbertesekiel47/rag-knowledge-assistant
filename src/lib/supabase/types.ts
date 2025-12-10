@@ -1,7 +1,7 @@
 // Database types - these match our schema
 export type DocumentStatus = "pending" | "processing" | "processed" | "failed";
 export type MessageRole = "user" | "assistant";
-export type LLMModel = "claude" | "gemini";
+export type LLMModel = "llama-70b" | "llama-8b" | "qwen-32b";
 
 export interface User {
   id: string;

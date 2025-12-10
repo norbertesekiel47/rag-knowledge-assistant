@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { FileUpload } from "@/components/upload/FileUpload";
 import { DocumentList } from "@/components/documents/DocumentList";
 import { SearchBox } from "@/components/search/SearchBox";
+import { ChatInterface } from "@/components/chat/ChatInterface";
 import type { Document } from "@/lib/supabase/types";
 
 interface DashboardClientProps {
@@ -14,13 +15,12 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
   const [documents, setDocuments] = useState<Document[]>(initialDocuments);
   const [error, setError] = useState<string | null>(null);
   const [setupStatus, setSetupStatus] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"chat" | "search">("chat");
 
-  // Check if any documents are pending/processing
   const hasPendingDocuments = documents.some(
     (doc) => doc.status === "pending" || doc.status === "processing"
   );
 
-  // Fetch latest documents
   const refreshDocuments = useCallback(async () => {
     try {
       const response = await fetch("/api/documents");
@@ -33,7 +33,6 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
     }
   }, []);
 
-  // Poll for updates when documents are processing
   useEffect(() => {
     if (!hasPendingDocuments) return;
 
@@ -54,7 +53,6 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
     setTimeout(() => setError(null), 5000);
   };
 
-  // Initialize Weaviate schema
   const handleSetupWeaviate = async () => {
     setSetupStatus("Initializing...");
     try {
@@ -75,7 +73,6 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
     setTimeout(() => setSetupStatus(null), 5000);
   };
 
-  // Check if we have any processed documents (for showing search)
   const hasProcessedDocuments = documents.some(
     (doc) => doc.status === "processed"
   );
@@ -101,23 +98,57 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
           </button>
         </div>
         {setupStatus && (
-          <p className={`mt-2 text-sm ${setupStatus.startsWith("✓") ? "text-green-600" : setupStatus.startsWith("✗") ? "text-red-600" : "text-blue-600"}`}>
+          <p
+            className={`mt-2 text-sm ${
+              setupStatus.startsWith("✓")
+                ? "text-green-600"
+                : setupStatus.startsWith("✗")
+                ? "text-red-600"
+                : "text-blue-600"
+            }`}
+          >
             {setupStatus}
           </p>
         )}
       </section>
 
-      {/* Search Section */}
+      {/* Chat/Search Section */}
       <section>
-        <h2 className="text-lg font-medium text-gray-900 mb-4">
-          Search Documents
-        </h2>
+        {/* Tabs */}
+        <div className="flex space-x-1 mb-4 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab("chat")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "chat"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            💬 Chat
+          </button>
+          <button
+            onClick={() => setActiveTab("search")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "search"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            🔍 Search
+          </button>
+        </div>
+
+        {/* Tab Content */}
         {hasProcessedDocuments ? (
-          <SearchBox />
+          activeTab === "chat" ? (
+            <ChatInterface />
+          ) : (
+            <SearchBox />
+          )
         ) : (
-          <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center">
+          <div className="p-8 bg-gray-50 border border-gray-200 rounded-lg text-center">
             <p className="text-gray-600">
-              Upload and process documents to enable semantic search.
+              Upload and process documents to enable chat and search.
             </p>
           </div>
         )}
@@ -142,9 +173,7 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
       {/* Documents Section */}
       <section>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-medium text-gray-900">
-            Your Documents
-          </h2>
+          <h2 className="text-lg font-medium text-gray-900">Your Documents</h2>
           <div className="flex items-center space-x-3">
             {hasPendingDocuments && (
               <span className="text-sm text-blue-600 flex items-center">
