@@ -1,6 +1,7 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { parseDocument } from "./parsers";
 import { chunkDocument, DocumentChunk } from "./chunker";
+import { storeChunks, deleteDocumentChunks } from "@/lib/weaviate/vectors";
 
 export interface ProcessingResult {
   success: boolean;
@@ -10,7 +11,7 @@ export interface ProcessingResult {
 }
 
 /**
- * Process a single document: download, parse, chunk, and update status
+ * Process a single document: download, parse, chunk, embed, and store
  */
 export async function processDocument(
   documentId: string
@@ -51,7 +52,6 @@ export async function processDocument(
     // 5. Parse document based on type
     const parsed = await parseDocument(buffer, document.file_type);
 
-    // Check if we got any content
     if (!parsed.content || parsed.content.length === 0) {
       throw new Error("Document appears to be empty or could not be parsed");
     }
@@ -68,7 +68,22 @@ export async function processDocument(
       throw new Error("No chunks created from document");
     }
 
-    // 7. Update document status to processed
+    // 7. Delete any existing chunks for this document (in case of reprocessing)
+    await deleteDocumentChunks(documentId);
+
+    // 8. Store chunks with embeddings in Weaviate
+    const chunksToStore = chunks.map((chunk) => ({
+      content: chunk.content,
+      documentId: document.id,
+      userId: document.user_id,
+      filename: document.filename,
+      fileType: document.file_type,
+      chunkIndex: chunk.chunkIndex,
+    }));
+
+    await storeChunks(chunksToStore);
+
+    // 9. Update document status to processed
     const { error: updateError } = await supabase
       .from("documents")
       .update({
@@ -82,7 +97,7 @@ export async function processDocument(
     }
 
     console.log(
-      `Document ${documentId} processed: ${chunks.length} chunks created`
+      `Document ${documentId} processed: ${chunks.length} chunks embedded and stored`
     );
 
     return {
@@ -123,7 +138,6 @@ export async function processPendingDocuments(
 ): Promise<ProcessingResult[]> {
   const supabase = createServiceClient();
 
-  // Find all pending documents for this user
   const { data: pendingDocs, error } = await supabase
     .from("documents")
     .select("id")
@@ -139,7 +153,6 @@ export async function processPendingDocuments(
     return [];
   }
 
-  // Process each document
   const results = await Promise.all(
     pendingDocs.map((doc) => processDocument(doc.id))
   );

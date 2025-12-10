@@ -1,4 +1,4 @@
-import pdfParse from "pdf-parse";
+import { extractText } from "unpdf";
 import matter from "gray-matter";
 import { remark } from "remark";
 import strip from "strip-markdown";
@@ -13,14 +13,19 @@ export interface ParsedDocument {
  */
 export async function parsePDF(buffer: Buffer): Promise<ParsedDocument> {
   try {
-    const data = await pdfParse(buffer);
+    // Convert Buffer to Uint8Array for unpdf
+    const uint8Array = new Uint8Array(buffer);
+    
+    const { text, totalPages } = await extractText(uint8Array, {
+      mergePages: true,
+    });
+
+    const content = Array.isArray(text) ? text.join("\n\n") : text;
 
     return {
-      content: data.text.trim(),
+      content: content.trim(),
       metadata: {
-        pageCount: data.numpages,
-        title: data.info?.Title || null,
-        author: data.info?.Author || null,
+        pageCount: totalPages,
       },
     };
   } catch (error) {

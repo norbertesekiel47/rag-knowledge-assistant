@@ -4,11 +4,18 @@ import { createServiceClient } from "@/lib/supabase/server";
 import {
   MAX_FILE_SIZE,
   MAX_FILE_SIZE_DISPLAY,
-  isAllowedMimeType,
-  getFileType,
   ALLOWED_EXTENSIONS,
+  isAllowedFile,
+  getFileType,
 } from "@/lib/constants";
 import { processDocument } from "@/lib/processing/processor";
+
+// Map our file types to proper MIME types for storage
+const FILE_TYPE_TO_MIME: Record<string, string> = {
+  pdf: "application/pdf",
+  txt: "text/plain",
+  md: "text/markdown",
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,20 +48,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!isAllowedMimeType(file.type)) {
+    // Check file type using both MIME type and extension
+    if (!isAllowedFile(file.type, file.name)) {
       return NextResponse.json(
         { error: `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}` },
         { status: 400 }
       );
     }
 
-    const fileType = getFileType(file.type);
+    const fileType = getFileType(file.type, file.name);
     if (!fileType) {
       return NextResponse.json(
         { error: "Could not determine file type" },
         { status: 400 }
       );
     }
+
+    // Get the correct MIME type for storage
+    const mimeType = FILE_TYPE_TO_MIME[fileType] || "application/octet-stream";
 
     // 4. Prepare file for upload
     const timestamp = Date.now();
@@ -70,7 +81,7 @@ export async function POST(request: NextRequest) {
     const { error: uploadError } = await supabase.storage
       .from("documents")
       .upload(storagePath, buffer, {
-        contentType: file.type,
+        contentType: mimeType, // Use our determined MIME type, not the browser's
         upsert: false,
       });
 
@@ -106,7 +117,6 @@ export async function POST(request: NextRequest) {
     }
 
     // 7. Trigger processing (non-blocking)
-    // We don't await this - it runs in the background
     processDocument(document.id)
       .then((result) => {
         if (result.success) {
@@ -119,7 +129,7 @@ export async function POST(request: NextRequest) {
         console.error("Background processing error:", error);
       });
 
-    // 8. Return the document immediately (processing happens in background)
+    // 8. Return the document immediately
     return NextResponse.json({ document }, { status: 201 });
 
   } catch (error) {

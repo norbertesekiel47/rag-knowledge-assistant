@@ -98,7 +98,12 @@ export function FileUpload({ onUploadComplete, onUploadError }: FileUploadProps)
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: ALLOWED_FILE_TYPES,
+    accept: {
+      "application/pdf": [".pdf"],
+      "text/plain": [".txt"],
+      "text/markdown": [".md", ".markdown"],
+      "text/x-markdown": [".md", ".markdown"],
+    },
     maxSize: MAX_FILE_SIZE,
     multiple: true,
   });
