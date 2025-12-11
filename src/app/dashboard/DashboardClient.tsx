@@ -9,6 +9,7 @@ import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import type { Document } from "@/lib/supabase/types";
 import { EmbeddingSettings } from "@/components/settings/EmbeddingSettings";
 import { EmbeddingProvider, DEFAULT_EMBEDDING_PROVIDER } from "@/lib/embeddings/config";
+import { AnalyticsDashboard } from "@/components/analytics/AnalyticsDashboard";
 
 interface ChatSession {
   id: string;
@@ -25,7 +26,7 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
   const [documents, setDocuments] = useState<Document[]>(initialDocuments);
   const [error, setError] = useState<string | null>(null);
   const [setupStatus, setSetupStatus] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"chat" | "search" | "documents">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "search" | "documents" | "analytics">("chat");
   const [embeddingProvider, setEmbeddingProvider] = useState<EmbeddingProvider>(DEFAULT_EMBEDDING_PROVIDER);
 
   // Chat session state
@@ -38,8 +39,17 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
   );
 
   const hasProcessedDocuments = documents.some(
-    (doc) => doc.status === "processed"
+  (doc) => doc.status === "processed" && doc.embedding_provider === embeddingProvider
   );
+
+  // Filter documents by selected embedding provider
+  const filteredDocuments = documents.filter(
+  (doc) => doc.embedding_provider === embeddingProvider
+  );
+
+  const handleDocumentDeleted = (documentId: string) => {
+  setDocuments((prev) => prev.filter((doc) => doc.id !== documentId));
+  };
 
   // Load chat sessions on mount
   useEffect(() => {
@@ -222,6 +232,16 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
             >
               📄 Documents
             </button>
+            <button
+              onClick={() => setActiveTab("analytics")}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "analytics"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              📊 Analytics
+            </button>
           </div>
 
           {/* Tab Content */}
@@ -307,14 +327,21 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
                       </span>
                     )}
                     <span className="text-sm text-gray-500">
-                      {documents.length} document{documents.length !== 1 ? "s" : ""}
+                      {filteredDocuments.length} document{filteredDocuments.length !== 1 ? "s" : ""} 
+                      {filteredDocuments.length !== documents.length && (
+                        <span className="text-gray-400"> ({documents.length} total)</span>
+                      )}
                     </span>
                   </div>
                 </div>
-                <DocumentList documents={documents} />
+                <DocumentList 
+                  documents={filteredDocuments} 
+                  onDocumentDeleted={handleDocumentDeleted}
+                />
               </section>
             </div>
           )}
+          {activeTab === "analytics" && <AnalyticsDashboard />}
         </div>
       </div>
     </div>

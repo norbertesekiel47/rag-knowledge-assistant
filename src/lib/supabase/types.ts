@@ -2,6 +2,7 @@
 export type DocumentStatus = "pending" | "processing" | "processed" | "failed";
 export type MessageRole = "user" | "assistant";
 export type LLMModel = "llama-70b" | "llama-8b" | "qwen-32b";
+import { EmbeddingProvider } from "@/lib/embeddings/config";
 
 export interface User {
   id: string;
@@ -20,6 +21,7 @@ export interface Document {
   status: DocumentStatus;
   chunk_count: number;
   error_message: string | null;
+  embedding_provider: EmbeddingProvider;
   created_at: string;
   updated_at: string;
 }

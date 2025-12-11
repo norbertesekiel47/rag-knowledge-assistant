@@ -50,6 +50,10 @@ export function FileUpload({
       const data = await response.json();
 
       if (!response.ok) {
+        // Check if it's a duplicate file error
+        if (response.status === 409 && data.duplicate) {
+          throw new Error(data.error);
+        }
         throw new Error(data.error || "Upload failed");
       }
 
@@ -75,6 +79,10 @@ export function FileUpload({
       );
 
       onUploadError(errorMessage);
+
+      setTimeout(() => {
+        setUploadingFiles((prev) => prev.filter((f) => f.file !== file));
+      }, 4000);
     }
   };
 
@@ -200,7 +208,11 @@ export function FileUpload({
                   </svg>
                 )}
                 {uploadingFile.status === "error" && (
-                  <span className="text-sm text-red-600">
+                  <span className={`text-sm ${
+                    uploadingFile.error?.includes("already") 
+                      ? "text-amber-600" 
+                      : "text-red-600"
+                  }`}>
                     {uploadingFile.error}
                   </span>
                 )}

@@ -1,4 +1,5 @@
-import { EmbeddingProvider, EMBEDDING_CONFIGS, getCollectionName } from "./config";
+import { EmbeddingProvider } from "./config";
+import { InferenceClient } from "@huggingface/inference";
 
 export * from "./config";
 
@@ -54,59 +55,41 @@ async function generateVoyageQueryEmbedding(query: string): Promise<number[]> {
   return embedding;
 }
 
-// Hugging Face implementation
-const HF_API_URL =
-  "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2";
+// Hugging Face implementation - Using official SDK
+const HF_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2";
+
+let hfClient: InferenceClient | null = null;
+
+function getHfClient(): InferenceClient {
+  if (hfClient) return hfClient;
+  
+  const apiKey = process.env.HUGGINGFACE_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing HUGGINGFACE_API_KEY environment variable");
+  }
+  
+  hfClient = new InferenceClient(apiKey);
+  return hfClient;
+}
 
 async function generateHuggingFaceEmbeddings(texts: string[]): Promise<number[][]> {
   if (texts.length === 0) {
     return [];
   }
 
-  const apiKey = process.env.HUGGINGFACE_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("Missing HUGGINGFACE_API_KEY environment variable");
-  }
-
-  const batchSize = 10;
+  const client = getHfClient();
   const allEmbeddings: number[][] = [];
 
-  for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = texts.slice(i, i + batchSize);
-
-    const response = await fetch(HF_API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        inputs: batch,
-        options: { wait_for_model: true },
-      }),
+  // Process one at a time to avoid issues
+  for (const text of texts) {
+    const response = await client.featureExtraction({
+      model: HF_MODEL_ID,
+      inputs: text,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Hugging Face API error: ${response.status} - ${errorText}`);
-    }
-
-    const embeddings = await response.json();
-
-    if (Array.isArray(embeddings)) {
-      for (const embedding of embeddings) {
-        if (Array.isArray(embedding) && Array.isArray(embedding[0])) {
-          const pooled = meanPool(embedding);
-          allEmbeddings.push(pooled);
-        } else if (Array.isArray(embedding)) {
-          allEmbeddings.push(embedding);
-        }
-      }
-    }
-
-    if (i + batchSize < texts.length) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    // Response is number[] for single input
+    if (Array.isArray(response)) {
+      allEmbeddings.push(response as number[]);
     }
   }
 
@@ -114,13 +97,18 @@ async function generateHuggingFaceEmbeddings(texts: string[]): Promise<number[][
 }
 
 async function generateHuggingFaceQueryEmbedding(query: string): Promise<number[]> {
-  const embeddings = await generateHuggingFaceEmbeddings([query]);
+  const client = getHfClient();
 
-  if (embeddings.length === 0) {
-    throw new Error("No embedding returned for query");
+  const response = await client.featureExtraction({
+    model: HF_MODEL_ID,
+    inputs: query,
+  });
+
+  if (Array.isArray(response)) {
+    return response as number[];
   }
 
-  return embeddings[0];
+  throw new Error("Unexpected embedding format from Hugging Face API");
 }
 
 function meanPool(tokenEmbeddings: number[][]): number[] {

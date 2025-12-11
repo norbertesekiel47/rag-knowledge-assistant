@@ -33,6 +33,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
+    // Check for duplicate file (same filename + same embedding provider)
+    const supabaseCheck = createServiceClient();
+    const { data: existingDoc } = await supabaseCheck
+      .from("documents")
+      .select("id, status, filename")
+      .eq("user_id", userId)
+      .eq("filename", file.name)
+      .eq("embedding_provider", embeddingProvider)
+      .single();
+
+    if (existingDoc) {
+      const statusMessage = existingDoc.status === "processed" 
+        ? "already processed" 
+        : existingDoc.status === "processing"
+        ? "currently being processed"
+        : existingDoc.status === "failed"
+        ? "previously failed (delete it first to retry)"
+        : "already uploaded";
+        
+      return NextResponse.json(
+        { 
+          error: `File "${file.name}" is ${statusMessage} with ${embeddingProvider === "voyage" ? "Voyage AI" : "HuggingFace"}.`,
+          duplicate: true,
+          existingDocument: existingDoc
+        },
+        { status: 409 } // 409 Conflict
+      );
+    }
+
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         { error: `File size exceeds ${MAX_FILE_SIZE_DISPLAY} limit` },
@@ -81,17 +110,18 @@ export async function POST(request: NextRequest) {
     }
 
     const { data: document, error: dbError } = await supabase
-      .from("documents")
-      .insert({
-        user_id: userId,
-        filename: file.name,
-        file_type: fileType,
-        file_size: file.size,
-        storage_path: storagePath,
-        status: "pending",
-      })
-      .select()
-      .single();
+    .from("documents")
+    .insert({
+      user_id: userId,
+      filename: file.name,
+      file_type: fileType,
+      file_size: file.size,
+      storage_path: storagePath,
+      status: "pending",
+      embedding_provider: embeddingProvider,
+    })
+    .select()
+    .single();
 
     if (dbError) {
       await supabase.storage.from("documents").remove([storagePath]);

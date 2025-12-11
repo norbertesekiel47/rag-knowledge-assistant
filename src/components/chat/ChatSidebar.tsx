@@ -105,7 +105,15 @@ export function ChatSidebar({
                         }
                       `}
                     >
-                      <span className="truncate flex-1">{session.title}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="block truncate text-sm">{session.title}</span>
+                        <span className="block text-xs text-gray-400 truncate">
+                          {new Date(session.updated_at).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                      </div>
                       <button
                         onClick={(e) => handleDelete(session.id, e)}
                         className={`

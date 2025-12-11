@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { LLMProvider, MODEL_NAMES } from "@/lib/llm/types";
 import { EmbeddingProvider, DEFAULT_EMBEDDING_PROVIDER } from "@/lib/embeddings/config";
+import { MessageContent } from "./MessageContent";
 
 interface Source {
   documentId: string;
@@ -122,7 +123,23 @@ export function ChatInterface({
   const createSession = async (firstMessage: string): Promise<string | null> => {
     try {
       // Generate title from first message
-      const title = firstMessage.slice(0, 50) + (firstMessage.length > 50 ? "..." : "");
+      let title = firstMessage.slice(0, 50) + (firstMessage.length > 50 ? "..." : "");
+
+      try {
+        const titleResponse = await fetch("/api/chat/generate-title", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: firstMessage }),
+        });
+        
+        if (titleResponse.ok) {
+          const titleData = await titleResponse.json();
+          title = titleData.title;
+        }
+      } catch (titleError) {
+        console.error("Failed to generate title:", titleError);
+        // Fall back to truncated message
+      }
 
       const response = await fetch("/api/chat/sessions", {
         method: "POST",
@@ -321,10 +338,10 @@ export function ChatInterface({
             <div className="max-w-[80%] space-y-2">
               {currentSources.length > 0 && <SourcesList sources={currentSources} />}
               <div className="bg-gray-100 rounded-lg px-4 py-2">
-                <p className="text-sm text-gray-800 whitespace-pre-wrap">
-                  {streamingContent}
+                <div className="text-sm text-gray-800 whitespace-pre-wrap">
+                  <MessageContent content={streamingContent} isUser={false} />
                   <span className="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-1" />
-                </p>
+                </div>
               </div>
             </div>
           </div>
@@ -384,7 +401,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             isUser ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-800"
           }`}
         >
-          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+          <MessageContent content={message.content} isUser={isUser} />
         </div>
 
         {!isUser && message.model && (

@@ -102,16 +102,20 @@ export async function searchChunks(
 export async function deleteDocumentChunks(
   documentId: string,
   provider: EmbeddingProvider
-): Promise<void> {
+): Promise<number> {
   const client = await getWeaviateClient();
   const collectionName = getCollectionName(provider);
   const collection = client.collections.get(collectionName);
 
-  await collection.data.deleteMany(
+  // Use the correct filter syntax for Weaviate v3
+  const result = await collection.data.deleteMany(
     collection.filter.byProperty("documentId").equal(documentId)
   );
 
-  console.log(`Deleted chunks for document ${documentId} from ${collectionName}`);
+  const deletedCount = result.successful || 0;
+  console.log(`Deleted ${deletedCount} chunks for document ${documentId} from ${collectionName}`);
+  
+  return deletedCount;
 }
 
 /**

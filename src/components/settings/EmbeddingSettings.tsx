@@ -56,10 +56,10 @@ export function EmbeddingSettings({
         <div className="px-4 pb-4 space-y-4">
           {/* Info Banner */}
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <p className="text-xs text-amber-800">
-              <strong>Important:</strong> Documents are indexed per embedding model. 
-              If you switch models, you&apos;ll need to re-upload documents to search them 
-              with the new model.
+            <p className="text-xs text-blue-800">
+              <strong>Note:</strong> Documents are indexed per embedding model. 
+              Switching models will show only documents processed with that model.
+              You can have documents in both but just upload separately for each.
             </p>
           </div>
 

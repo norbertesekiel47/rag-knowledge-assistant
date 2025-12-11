@@ -1,28 +1,41 @@
 "use client";
 
+import { useState } from "react";
 import type { Document } from "@/lib/supabase/types";
 
 interface DocumentListProps {
   documents: Document[];
-  isLoading?: boolean;
+  onDocumentDeleted?: (documentId: string) => void;
 }
 
-export function DocumentList({ documents, isLoading }: DocumentListProps) {
-  if (isLoading) {
-    return (
-      <div className="space-y-3">
-        {[...Array(3)].map((_, i) => (
-          <div key={i} className="animate-pulse bg-gray-100 rounded-lg h-16" />
-        ))}
-      </div>
-    );
-  }
+const STATUS_CONFIG = {
+  pending: {
+    label: "Pending",
+    color: "bg-yellow-100 text-yellow-800",
+  },
+  processing: {
+    label: "Processing",
+    color: "bg-blue-100 text-blue-800",
+  },
+  processed: {
+    label: "Processed",
+    color: "bg-green-100 text-green-800",
+  },
+  failed: {
+    label: "Failed",
+    color: "bg-red-100 text-red-800",
+  },
+};
+
+export function DocumentList({ documents, onDocumentDeleted }: DocumentListProps) {
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   if (documents.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500">
+      <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
         <svg
-          className="mx-auto h-12 w-12 text-gray-400 mb-3"
+          className="mx-auto h-12 w-12 text-gray-400"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -34,47 +47,86 @@ export function DocumentList({ documents, isLoading }: DocumentListProps) {
             d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
           />
         </svg>
-        <p>No documents yet</p>
-        <p className="text-sm">Upload your first document to get started</p>
+        <p className="mt-2 text-sm text-gray-600">No documents uploaded yet</p>
+        <p className="text-xs text-gray-500">
+          Upload PDF, TXT, or Markdown files to get started
+        </p>
       </div>
     );
   }
 
+  const handleDeleteClick = (documentId: string) => {
+    if (confirmDeleteId === documentId) {
+      // Second click - perform delete
+      performDelete(documentId);
+    } else {
+      // First click - show confirmation
+      setConfirmDeleteId(documentId);
+      // Auto-reset after 3 seconds
+      setTimeout(() => setConfirmDeleteId(null), 3000);
+    }
+  };
+
+  const performDelete = async (documentId: string) => {
+    setDeletingIds((prev) => new Set(prev).add(documentId));
+    setConfirmDeleteId(null);
+
+    try {
+      const response = await fetch(`/api/documents/${documentId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to delete document");
+      }
+
+      onDocumentDeleted?.(documentId);
+    } catch (error) {
+      console.error("Delete error:", error);
+      alert(error instanceof Error ? error.message : "Failed to delete document");
+    } finally {
+      setDeletingIds((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(documentId);
+        return newSet;
+      });
+    }
+  };
+
   return (
-    <div className="space-y-2">
-      {documents.map((doc) => (
-        <DocumentCard key={doc.id} document={doc} />
+    <div className="space-y-3">
+      {documents.map((document) => (
+        <DocumentCard
+          key={document.id}
+          document={document}
+          isDeleting={deletingIds.has(document.id)}
+          isConfirmingDelete={confirmDeleteId === document.id}
+          onDeleteClick={() => handleDeleteClick(document.id)}
+        />
       ))}
     </div>
   );
 }
 
-function DocumentCard({ document }: { document: Document }) {
-  const statusConfig = {
-    pending: {
-      color: "bg-yellow-100 text-yellow-800",
-      label: "Pending",
-    },
-    processing: {
-      color: "bg-blue-100 text-blue-800",
-      label: "Processing",
-    },
-    processed: {
-      color: "bg-green-100 text-green-800",
-      label: "Ready",
-    },
-    failed: {
-      color: "bg-red-100 text-red-800",
-      label: "Failed",
-    },
-  };
+interface DocumentCardProps {
+  document: Document;
+  isDeleting: boolean;
+  isConfirmingDelete: boolean;
+  onDeleteClick: () => void;
+}
 
-  const status = statusConfig[document.status];
-
+function DocumentCard({
+  document,
+  isDeleting,
+  isConfirmingDelete,
+  onDeleteClick,
+}: DocumentCardProps) {
+  const status = STATUS_CONFIG[document.status];
   const fileTypeColors: Record<string, string> = {
-    pdf: "text-red-500 bg-red-50",
-    txt: "text-gray-500 bg-gray-100",
-    md: "text-blue-500 bg-blue-50",
+    pdf: "text-red-500",
+    txt: "text-gray-500",
+    md: "text-blue-500",
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -93,37 +145,64 @@ function DocumentCard({ document }: { document: Document }) {
   };
 
   return (
-    <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors">
-      <div className="flex items-center space-x-4 min-w-0">
-        {/* File type badge */}
+    <div
+      className={`
+        group flex items-center justify-between p-4 bg-white border rounded-lg
+        transition-all duration-200
+        ${isDeleting ? "opacity-50" : "hover:shadow-md hover:border-gray-300"}
+      `}
+    >
+      {/* Left: File icon and info */}
+      <div className="flex items-center space-x-4 min-w-0 flex-1">
+        {/* File type icon */}
         <div
-          className={`
-            shrink-0 w-10 h-10 rounded-lg flex items-center justify-center
-            font-medium text-xs uppercase
-            ${fileTypeColors[document.file_type] || "text-gray-500 bg-gray-100"}
-          `}
+          className={`shrink-0 ${fileTypeColors[document.file_type] || "text-gray-400"}`}
         >
-          {document.file_type}
+          <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 20 20">
+            <path
+              fillRule="evenodd"
+              d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
+              clipRule="evenodd"
+            />
+          </svg>
+          <span className="block text-center text-xs font-medium uppercase -mt-1">
+            {document.file_type}
+          </span>
         </div>
 
-        {/* File info */}
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">
+        {/* File details */}
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-medium text-gray-900 truncate">
             {document.filename}
-          </p>
-          <p className="text-xs text-gray-500">
-            {formatFileSize(document.file_size)} • {formatDate(document.created_at)}
-          </p>
+          </h3>
+          <div className="flex items-center space-x-3 mt-1">
+            <span className="text-xs text-gray-500">
+              {formatFileSize(document.file_size)}
+            </span>
+            <span className="text-xs text-gray-400">•</span>
+            <span className="text-xs text-gray-500">
+              {formatDate(document.created_at)}
+            </span>
+            {document.status === "processed" && document.chunk_count > 0 && (
+              <>
+                <span className="text-xs text-gray-400">•</span>
+                <span className="text-xs text-gray-500">
+                  {document.chunk_count} chunks
+                </span>
+              </>
+            )}
+          </div>
+          {document.status === "failed" && document.error_message && (
+            <p className="text-xs text-red-600 mt-1 truncate">
+              {document.error_message}
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Status badge */}
-      <div className="flex items-center space-x-3">
-        {document.status === "processed" && document.chunk_count > 0 && (
-          <span className="text-xs text-gray-500">
-            {document.chunk_count} chunks
-          </span>
-        )}
+      {/* Right: Status badges and delete button */}
+      <div className="flex items-center space-x-3 ml-4">
+        {/* Status badge */}
         <span
           className={`
             inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
@@ -153,6 +232,78 @@ function DocumentCard({ document }: { document: Document }) {
           )}
           {status.label}
         </span>
+
+        {/* Embedding provider badge */}
+        <span
+          className={`
+            inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+            ${
+              document.embedding_provider === "voyage"
+                ? "bg-purple-100 text-purple-700"
+                : "bg-teal-100 text-teal-700"
+            }
+          `}
+        >
+          {document.embedding_provider === "voyage" ? "Voyage" : "HuggingFace"}
+        </span>
+
+        {/* Delete button */}
+        <button
+          onClick={onDeleteClick}
+          disabled={isDeleting || document.status === "processing"}
+          className={`
+            p-2 rounded-lg transition-all duration-200
+            ${
+              isConfirmingDelete
+                ? "bg-red-100 text-red-600 hover:bg-red-200"
+                : "text-gray-400 hover:text-red-500 hover:bg-red-50"
+            }
+            disabled:opacity-50 disabled:cursor-not-allowed
+          `}
+          title={
+            isConfirmingDelete
+              ? "Click again to confirm deletion"
+              : document.status === "processing"
+              ? "Cannot delete while processing"
+              : "Delete document"
+          }
+        >
+          {isDeleting ? (
+            <svg
+              className="w-5 h-5 animate-spin"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
+            </svg>
+          ) : (
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
+            </svg>
+          )}
+        </button>
       </div>
     </div>
   );

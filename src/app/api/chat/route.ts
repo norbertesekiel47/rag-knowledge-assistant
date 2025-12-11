@@ -9,6 +9,7 @@ import {
   RAGContext,
 } from "@/lib/llm";
 import { EmbeddingProvider, DEFAULT_EMBEDDING_PROVIDER } from "@/lib/embeddings";
+import { trackQuery } from "@/lib/analytics";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -32,6 +33,8 @@ export async function POST(request: NextRequest) {
         headers: { "Content-Type": "application/json" },
       });
     }
+
+    const startTime = Date.now();
 
     const body: ChatRequest = await request.json();
     const {
@@ -109,6 +112,21 @@ export async function POST(request: NextRequest) {
                 content: fullResponse,
               });
               controller.enqueue(encoder.encode(`data: ${completeData}\n\n`));
+              
+              // Track analytics (don't await - fire and forget)
+              trackQuery({
+                userId,
+                queryText: message,
+                model: provider,
+                embeddingProvider,
+                responseTimeMs: Date.now() - startTime,
+                sources: contexts.map((ctx) => ({
+                  documentId: ctx.documentId,
+                  chunkIndex: ctx.chunkIndex,
+                  relevanceScore: ctx.score,
+                })),
+              }).catch(console.error);
+              
               controller.close();
             },
             onError: (error) => {
