@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useDropzone } from "react-dropzone";
+import { useDropzone, FileRejection } from "react-dropzone";
 import {
   ALLOWED_EXTENSIONS,
   MAX_FILE_SIZE,
   MAX_FILE_SIZE_DISPLAY,
-  ALLOWED_FILE_TYPES,
 } from "@/lib/constants";
 import { EmbeddingProvider } from "@/lib/embeddings/config";
 import type { Document } from "@/lib/supabase/types";
@@ -31,7 +30,7 @@ export function FileUpload({
 }: FileUploadProps) {
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
 
-  const uploadFile = async (file: File) => {
+  const uploadFile = useCallback (async (file: File) => {
     setUploadingFiles((prev) => [
       ...prev,
       { file, progress: 0, status: "uploading" },
@@ -84,10 +83,10 @@ export function FileUpload({
         setUploadingFiles((prev) => prev.filter((f) => f.file !== file));
       }, 4000);
     }
-  };
+  }, [embeddingProvider, onUploadComplete, onUploadError]);
 
   const onDrop = useCallback(
-    (acceptedFiles: File[], rejectedFiles: { file: File; errors: { code: string; message: string }[] }[]) => {
+    (acceptedFiles: File[], rejectedFiles: FileRejection[]) => {
       rejectedFiles.forEach((rejection) => {
         const error = rejection.errors[0];
         if (error.code === "file-too-large") {
@@ -105,7 +104,7 @@ export function FileUpload({
         uploadFile(file);
       });
     },
-    [embeddingProvider, onUploadError]
+    [onUploadError, uploadFile]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { deleteDocumentChunks } from "@/lib/weaviate/vectors";
 import { EmbeddingProvider } from "@/lib/embeddings/config";
+import { checkRequestRateLimit } from "@/lib/rateLimit/middleware";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -10,8 +11,15 @@ interface RouteParams {
 
 // DELETE - Delete a document and its chunks
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  const rateLimit = await checkRequestRateLimit(request, "general");
+  
+  if (!rateLimit.success) {
+    return rateLimit.errorResponse;
+  }
+
+  const userId = rateLimit.userId!;
   try {
-    const { userId } = await auth();
+    //const { userId } = await auth();
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -93,8 +101,15 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
 // GET - Fetch a single document
 export async function GET(request: NextRequest, { params }: RouteParams) {
+  const rateLimit = await checkRequestRateLimit(request, "general");
+  
+  if (!rateLimit.success) {
+    return rateLimit.errorResponse;
+  }
+
+  const userId = rateLimit.userId!;
   try {
-    const { userId } = await auth();
+    //const { userId } = await auth();
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -10,6 +10,7 @@ import type { Document } from "@/lib/supabase/types";
 import { EmbeddingSettings } from "@/components/settings/EmbeddingSettings";
 import { EmbeddingProvider, DEFAULT_EMBEDDING_PROVIDER } from "@/lib/embeddings/config";
 import { AnalyticsDashboard } from "@/components/analytics/AnalyticsDashboard";
+import { WeaviateSetup } from "@/components/ui/WeaviateSetup";
 
 interface ChatSession {
   id: string;
@@ -25,7 +26,7 @@ interface DashboardClientProps {
 export function DashboardClient({ initialDocuments }: DashboardClientProps) {
   const [documents, setDocuments] = useState<Document[]>(initialDocuments);
   const [error, setError] = useState<string | null>(null);
-  const [setupStatus, setSetupStatus] = useState<string | null>(null);
+  // const [setupStatus, setSetupStatus] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "search" | "documents" | "analytics">("chat");
   const [embeddingProvider, setEmbeddingProvider] = useState<EmbeddingProvider>(DEFAULT_EMBEDDING_PROVIDER);
 
@@ -103,7 +104,7 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
     setTimeout(() => setError(null), 5000);
   };
 
-  const handleSetupWeaviate = async () => {
+  /*const handleSetupWeaviate = async () => {
     setSetupStatus("Initializing...");
     try {
       const response = await fetch("/api/setup/weaviate", { method: "POST" });
@@ -118,7 +119,7 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
       setSetupStatus("✗ Failed to connect to setup endpoint");
     }
     setTimeout(() => setSetupStatus(null), 5000);
-  };
+  }; */
 
   const handleNewChat = () => {
     setCurrentSessionId(null);
@@ -170,35 +171,7 @@ export function DashboardClient({ initialDocuments }: DashboardClientProps) {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto space-y-6">
           {/* Setup Section */}
-          <section className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium text-blue-900">First-time Setup</h3>
-                <p className="text-sm text-blue-700">
-                  Initialize the vector database schema (only needed once)
-                </p>
-              </div>
-              <button
-                onClick={handleSetupWeaviate}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors"
-              >
-                Initialize Weaviate
-              </button>
-            </div>
-            {setupStatus && (
-              <p
-                className={`mt-2 text-sm ${
-                  setupStatus.startsWith("✓")
-                    ? "text-green-600"
-                    : setupStatus.startsWith("✗")
-                    ? "text-red-600"
-                    : "text-blue-600"
-                }`}
-              >
-                {setupStatus}
-              </p>
-            )}
-          </section>
+          <WeaviateSetup />
 
           {/* Tabs */}
           <div className="flex space-x-1 border-b border-gray-200">

@@ -1,6 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest } from "next/server";
 import { searchChunks } from "@/lib/weaviate/vectors";
+import { checkRequestRateLimit } from "@/lib/rateLimit/middleware";
+import { getRateLimitHeaders } from "@/lib/rateLimit";
 import {
   buildRAGPrompt,
   streamLLMResponse,
@@ -24,15 +26,24 @@ interface ChatRequest {
 const VALID_PROVIDERS: LLMProvider[] = ["llama-70b", "llama-8b", "qwen-32b"];
 
 export async function POST(request: NextRequest) {
-  try {
-    const { userId } = await auth();
+  // Check rate limit
+  const rateLimit = await checkRequestRateLimit(request, "chat");
+  
+  if (!rateLimit.success) {
+    return rateLimit.errorResponse;
+  }
 
-    if (!userId) {
+  const userId = rateLimit.userId!;
+
+  try {
+    //const { userId } = await auth();
+
+    /*if (!userId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
-    }
+    }*/
 
     const startTime = Date.now();
 
@@ -149,6 +160,7 @@ export async function POST(request: NextRequest) {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
+        ...(rateLimit.result ? getRateLimitHeaders(rateLimit.result) : {}),
       },
     });
   } catch (error) {

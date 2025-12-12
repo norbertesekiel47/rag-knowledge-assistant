@@ -209,6 +209,12 @@ export function ChatInterface({
         }),
       });
 
+      // Check for rate limit error
+      if (response.status === 429) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Rate limit exceeded. Please wait and try again.");
+      }
+
       if (!response.ok) {
         throw new Error("Chat request failed");
       }

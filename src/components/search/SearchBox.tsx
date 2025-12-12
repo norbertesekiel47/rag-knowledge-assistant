@@ -90,7 +90,7 @@ export function SearchBox() {
             </p>
           ) : (
             <div className="space-y-3">
-              {results.map((result, index) => (
+              {results.map((result) => (
                 <div
                   key={`${result.documentId}-${result.chunkIndex}`}
                   className="p-4 bg-white border border-gray-200 rounded-lg"

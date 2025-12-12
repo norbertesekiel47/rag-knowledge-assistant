@@ -81,4 +81,18 @@ export async function initializeAllSchemas(): Promise<void> {
   }
 }
 
+/**
+ * Check if a collection exists in Weaviate
+ */
+export async function checkCollectionExists(collectionName: string): Promise<boolean> {
+  try {
+    const client = await getWeaviateClient();
+    const exists = await client.collections.exists(collectionName);
+    return exists;
+  } catch (error) {
+    console.error(`Error checking collection ${collectionName}:`, error);
+    return false;
+  }
+}
+
 export { getCollectionName };

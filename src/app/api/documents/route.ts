@@ -10,6 +10,7 @@ import {
 } from "@/lib/constants";
 import { processDocument } from "@/lib/processing/processor";
 import { EmbeddingProvider, DEFAULT_EMBEDDING_PROVIDER } from "@/lib/embeddings";
+import { checkRequestRateLimit } from "@/lib/rateLimit/middleware";
 
 const FILE_TYPE_TO_MIME: Record<string, string> = {
   pdf: "application/pdf",
@@ -18,8 +19,15 @@ const FILE_TYPE_TO_MIME: Record<string, string> = {
 };
 
 export async function POST(request: NextRequest) {
+  const rateLimit = await checkRequestRateLimit(request, "upload");
+  
+  if (!rateLimit.success) {
+    return rateLimit.errorResponse;
+  }
+
+  const userId = rateLimit.userId!;
   try {
-    const { userId } = await auth();
+    //const { userId } = await auth();
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -155,9 +163,17 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Check rate limit
+  const rateLimit = await checkRequestRateLimit(request, "general");
+  
+  if (!rateLimit.success) {
+    return rateLimit.errorResponse;
+  }
+
+  const userId = rateLimit.userId!;
   try {
-    const { userId } = await auth();
+    //const { userId } = await auth();
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
