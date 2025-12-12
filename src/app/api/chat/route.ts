@@ -25,12 +25,18 @@ interface ChatRequest {
 
 const VALID_PROVIDERS: LLMProvider[] = ["llama-70b", "llama-8b", "qwen-32b"];
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<Response> {
   // Check rate limit
   const rateLimit = await checkRequestRateLimit(request, "chat");
-  
+
   if (!rateLimit.success) {
-    return rateLimit.errorResponse;
+    return rateLimit.errorResponse || new Response(
+      JSON.stringify({ error: "Rate limit exceeded" }),
+      {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   const userId = rateLimit.userId!;

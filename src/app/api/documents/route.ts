@@ -1,4 +1,3 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
@@ -18,16 +17,21 @@ const FILE_TYPE_TO_MIME: Record<string, string> = {
   md: "text/markdown",
 };
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<Response> {
   const rateLimit = await checkRequestRateLimit(request, "upload");
-  
+
   if (!rateLimit.success) {
-    return rateLimit.errorResponse;
+    return rateLimit.errorResponse || new Response(
+      JSON.stringify({ error: "Rate limit exceeded" }),
+      {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   const userId = rateLimit.userId!;
   try {
-    //const { userId } = await auth();
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -163,12 +167,18 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
+export async function GET(request: NextRequest): Promise<Response> {
   // Check rate limit
   const rateLimit = await checkRequestRateLimit(request, "general");
-  
+
   if (!rateLimit.success) {
-    return rateLimit.errorResponse;
+    return rateLimit.errorResponse || new Response(
+      JSON.stringify({ error: "Rate limit exceeded" }),
+      {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   const userId = rateLimit.userId!;

@@ -1,4 +1,3 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { deleteDocumentChunks } from "@/lib/weaviate/vectors";
@@ -10,11 +9,17 @@ interface RouteParams {
 }
 
 // DELETE - Delete a document and its chunks
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export async function DELETE(request: NextRequest, { params }: RouteParams): Promise<Response> {
   const rateLimit = await checkRequestRateLimit(request, "general");
-  
+
   if (!rateLimit.success) {
-    return rateLimit.errorResponse;
+    return rateLimit.errorResponse || new Response(
+      JSON.stringify({ error: "Rate limit exceeded" }),
+      {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   const userId = rateLimit.userId!;
@@ -100,11 +105,17 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 }
 
 // GET - Fetch a single document
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, { params }: RouteParams): Promise<Response> {
   const rateLimit = await checkRequestRateLimit(request, "general");
-  
+
   if (!rateLimit.success) {
-    return rateLimit.errorResponse;
+    return rateLimit.errorResponse || new Response(
+      JSON.stringify({ error: "Rate limit exceeded" }),
+      {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   const userId = rateLimit.userId!;

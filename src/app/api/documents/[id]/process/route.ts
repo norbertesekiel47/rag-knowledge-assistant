@@ -1,4 +1,3 @@
-import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { processDocument } from "@/lib/processing/processor";
@@ -8,19 +7,23 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export async function POST(request: NextRequest, { params }: RouteParams): Promise<Response> {
   // Check rate limit for processing
   const rateLimit = await checkRequestRateLimit(request, "process");
-  
+
   if (!rateLimit.success) {
-    return rateLimit.errorResponse;
+    return rateLimit.errorResponse || new Response(
+      JSON.stringify({ error: "Rate limit exceeded" }),
+      {
+        status: 429,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   const userId = rateLimit.userId!;
   try {
     // 1. Verify authentication
-    //const { userId } = await auth();
-
     if (!userId) {
       return NextResponse.json(
         { error: "Unauthorized" },
