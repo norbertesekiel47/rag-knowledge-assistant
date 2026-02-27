@@ -68,14 +68,17 @@ export async function POST(req: Request) {
     const supabase = createServiceClient();
 
     // Upsert user (insert or update if exists)
+    const now = new Date().toISOString();
     const { error } = await supabase.from("users").upsert(
       {
         id: id,
         email: primaryEmail,
-        updated_at: new Date().toISOString(),
+        created_at: now,
+        updated_at: now,
       },
       {
         onConflict: "id",
+        ignoreDuplicates: false,
       }
     );
 
