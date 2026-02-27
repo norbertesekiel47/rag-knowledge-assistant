@@ -12,12 +12,12 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       // 'unsafe-eval' required by @splinetool/react-spline WebGL runtime (shader compilation)
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.clerk.com https://unpkg.com",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com https://unpkg.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' https: data: blob:",
       "font-src 'self' https://fonts.gstatic.com",
       "connect-src 'self' https://*.supabase.co https://*.clerk.accounts.dev https://*.clerk.com https://prod.spline.design https://fonts.gstatic.com",
-      "frame-src https://*.clerk.accounts.dev https://*.clerk.com",
+      "frame-src https://*.clerk.accounts.dev https://*.clerk.com https://challenges.cloudflare.com",
       "worker-src 'self' blob:",
     ].join("; "),
   },
