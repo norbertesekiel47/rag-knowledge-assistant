@@ -1,4 +1,5 @@
 import { VoyageAIClient } from "voyageai";
+import { logger } from "@/lib/utils/logger";
 
 let voyageClient: VoyageAIClient | null = null;
 
@@ -49,7 +50,9 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
     // Filter out any undefined embeddings
     return embeddings.filter((e): e is number[] => e !== undefined);
   } catch (error) {
-    console.error("Voyage AI embedding error:", error);
+    logger.error("Voyage AI embedding error", "embeddings", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     throw new Error(
       `Failed to generate embeddings: ${error instanceof Error ? error.message : "Unknown error"}`
     );
@@ -77,7 +80,9 @@ export async function generateQueryEmbedding(query: string): Promise<number[]> {
 
     return embedding;
   } catch (error) {
-    console.error("Voyage AI query embedding error:", error);
+    logger.error("Voyage AI query embedding error", "embeddings", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     throw new Error(
       `Failed to generate query embedding: ${error instanceof Error ? error.message : "Unknown error"}`
     );

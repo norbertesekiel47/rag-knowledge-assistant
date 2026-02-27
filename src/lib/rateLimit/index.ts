@@ -1,20 +1,21 @@
+import { getRedis, isRedisConfigured } from "@/lib/redis/client";
+
 export interface RateLimitConfig {
-  maxRequests: number;  // Maximum requests allowed
-  windowMs: number;     // Time window in milliseconds
+  maxRequests: number;
+  windowMs: number;
 }
 
 export interface RateLimitResult {
   success: boolean;
   limit: number;
   remaining: number;
-  reset: number;  // Timestamp when the limit resets
+  reset: number;
 }
 
-// In-memory store for rate limiting
-// Note: This resets on server restart. Use Redis for production.
+// ── In-memory fallback (used when Redis is not configured) ───────
+
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
 
-// Clean up expired entries periodically
 setInterval(() => {
   const now = Date.now();
   for (const [key, value] of rateLimitStore.entries()) {
@@ -22,24 +23,18 @@ setInterval(() => {
       rateLimitStore.delete(key);
     }
   }
-}, 60000); // Clean up every minute
+}, 60000);
 
-/**
- * Check rate limit for a given identifier
- */
-export function checkRateLimit(
+function checkRateLimitInMemory(
   identifier: string,
   config: RateLimitConfig
 ): RateLimitResult {
   const now = Date.now();
-  const key = identifier;
-  const record = rateLimitStore.get(key);
+  const record = rateLimitStore.get(identifier);
 
-  // If no record exists or window has expired, create new record
   if (!record || now > record.resetTime) {
     const resetTime = now + config.windowMs;
-    rateLimitStore.set(key, { count: 1, resetTime });
-    
+    rateLimitStore.set(identifier, { count: 1, resetTime });
     return {
       success: true,
       limit: config.maxRequests,
@@ -48,7 +43,6 @@ export function checkRateLimit(
     };
   }
 
-  // Check if limit exceeded
   if (record.count >= config.maxRequests) {
     return {
       success: false,
@@ -58,9 +52,8 @@ export function checkRateLimit(
     };
   }
 
-  // Increment count
   record.count++;
-  rateLimitStore.set(key, record);
+  rateLimitStore.set(identifier, record);
 
   return {
     success: true,
@@ -70,28 +63,85 @@ export function checkRateLimit(
   };
 }
 
-/**
- * Create a rate limiter for a specific endpoint
- */
-export function createRateLimiter(config: RateLimitConfig) {
-  return (identifier: string): RateLimitResult => {
-    return checkRateLimit(identifier, config);
-  };
+// ── Redis-backed rate limiting ───────────────────────────────────
+
+async function checkRateLimitRedis(
+  identifier: string,
+  config: RateLimitConfig
+): Promise<RateLimitResult> {
+  const redis = getRedis();
+  const key = `ratelimit:${identifier}`;
+  const windowSeconds = Math.ceil(config.windowMs / 1000);
+
+  try {
+    // Atomic increment + set TTL if new key
+    const count = await redis.incr(key);
+
+    if (count === 1) {
+      // First request in window — set expiry
+      await redis.expire(key, windowSeconds);
+    }
+
+    // Get TTL to compute reset timestamp
+    const ttl = await redis.ttl(key);
+    const reset = Date.now() + ttl * 1000;
+
+    if (count > config.maxRequests) {
+      return {
+        success: false,
+        limit: config.maxRequests,
+        remaining: 0,
+        reset,
+      };
+    }
+
+    return {
+      success: true,
+      limit: config.maxRequests,
+      remaining: config.maxRequests - count,
+      reset,
+    };
+  } catch (error) {
+    // Redis failure — fall back to in-memory
+    const { logger } = await import("@/lib/utils/logger");
+    logger.warn("Redis rate limit error, falling back to in-memory", "rateLimit", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
+    return checkRateLimitInMemory(identifier, config);
+  }
 }
 
-// Pre-configured rate limiters for different endpoints
-export const rateLimiters = {
-  chat: createRateLimiter({ maxRequests: 20, windowMs: 60 * 1000 }),
-  search: createRateLimiter({ maxRequests: 30, windowMs: 60 * 1000 }),
-  upload: createRateLimiter({ maxRequests: 10, windowMs: 60 * 1000 }),
-  process: createRateLimiter({ maxRequests: 5, windowMs: 60 * 1000 }),
-  general: createRateLimiter({ maxRequests: 100, windowMs: 60 * 1000 }),
+// ── Public API ───────────────────────────────────────────────────
+
+/**
+ * Check rate limit for a given identifier.
+ * Uses Redis when configured, otherwise falls back to in-memory.
+ */
+export async function checkRateLimit(
+  identifier: string,
+  config: RateLimitConfig
+): Promise<RateLimitResult> {
+  if (isRedisConfigured()) {
+    return checkRateLimitRedis(identifier, config);
+  }
+  return checkRateLimitInMemory(identifier, config);
+}
+
+// Pre-configured rate limit configs
+export const rateLimitConfigs: Record<string, RateLimitConfig> = {
+  chat: { maxRequests: 20, windowMs: 60 * 1000 },
+  search: { maxRequests: 30, windowMs: 60 * 1000 },
+  upload: { maxRequests: 10, windowMs: 60 * 1000 },
+  process: { maxRequests: 5, windowMs: 60 * 1000 },
+  general: { maxRequests: 100, windowMs: 60 * 1000 },
 };
 
 /**
  * Get rate limit headers for response
  */
-export function getRateLimitHeaders(result: RateLimitResult): Record<string, string> {
+export function getRateLimitHeaders(
+  result: RateLimitResult
+): Record<string, string> {
   return {
     "X-RateLimit-Limit": result.limit.toString(),
     "X-RateLimit-Remaining": result.remaining.toString(),
@@ -104,7 +154,7 @@ export function getRateLimitHeaders(result: RateLimitResult): Record<string, str
  */
 export function rateLimitExceededResponse(result: RateLimitResult): Response {
   const retryAfter = Math.ceil((result.reset - Date.now()) / 1000);
-  
+
   return new Response(
     JSON.stringify({
       error: "Too many requests",

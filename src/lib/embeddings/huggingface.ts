@@ -1,3 +1,5 @@
+import { logger } from "@/lib/utils/logger";
+
 export const EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2";
 export const EMBEDDING_DIMENSIONS = 384;
 
@@ -68,7 +70,9 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
 
     return allEmbeddings;
   } catch (error) {
-    console.error("Hugging Face embedding error:", error);
+    logger.error("Hugging Face embedding error", "embeddings", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     throw new Error(
       `Failed to generate embeddings: ${error instanceof Error ? error.message : "Unknown error"}`
     );

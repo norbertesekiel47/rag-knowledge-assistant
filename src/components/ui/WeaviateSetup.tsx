@@ -1,12 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Check, AlertTriangle, Zap, Loader2, Database } from "lucide-react";
 
 interface WeaviateStatus {
   initialized: boolean;
+  v2Initialized: boolean;
   collections: {
     voyage: boolean;
     huggingface: boolean;
+    voyageV2: boolean;
+    huggingfaceV2: boolean;
   };
 }
 
@@ -24,7 +30,7 @@ export function WeaviateSetup() {
     try {
       setIsLoading(true);
       const response = await fetch("/api/setup/weaviate");
-      
+
       if (response.ok) {
         const data = await response.json();
         setStatus(data);
@@ -48,7 +54,6 @@ export function WeaviateSetup() {
       });
 
       if (response.ok) {
-        // Recheck status after initialization
         await checkStatus();
       } else {
         const data = await response.json();
@@ -64,10 +69,10 @@ export function WeaviateSetup() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+      <div className="bg-card border border-border rounded-lg p-4">
         <div className="flex items-center gap-3">
-          <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm text-gray-600">Checking vector database status...</span>
+          <Loader2 className="w-5 h-5 text-primary animate-spin" />
+          <span className="text-sm text-muted-foreground">Checking vector database status...</span>
         </div>
       </div>
     );
@@ -75,134 +80,118 @@ export function WeaviateSetup() {
 
   // Already initialized
   if (status?.initialized) {
+    const allV2Ready = status.v2Initialized;
     return (
-      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+      <div className={`border rounded-lg p-4 ${allV2Ready ? "bg-green-500/10 border-green-500/20" : "bg-primary/10 border-primary/20"}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-              <svg
-                className="w-5 h-5 text-green-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${allV2Ready ? "bg-green-500/20" : "bg-primary/20"}`}>
+              <Check className={`w-5 h-5 ${allV2Ready ? "text-green-400" : "text-primary"}`} />
             </div>
             <div>
-              <h3 className="text-sm font-medium text-green-800">
-                Vector Database Ready
+              <h3 className={`text-sm font-medium ${allV2Ready ? "text-green-400" : "text-primary"}`}>
+                {allV2Ready ? "Vector Database Ready (V2)" : "Vector Database Ready (V1 only)"}
               </h3>
-              <p className="text-xs text-green-600">
-                Both embedding collections are initialized
+              <p className={`text-xs ${allV2Ready ? "text-green-400/70" : "text-primary/70"}`}>
+                {allV2Ready
+                  ? "Enriched V2 collections active — smart chunking & metadata enabled"
+                  : "V1 collections ready. Click Initialize to upgrade to V2."}
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
-            <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">
-              Voyage ✓
-            </span>
-            <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">
-              HuggingFace ✓
-            </span>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Badge variant="secondary" className={status.collections.voyage ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-muted text-muted-foreground"}>
+              Voyage V1 {status.collections.voyage ? "✓" : "✗"}
+            </Badge>
+            <Badge variant="secondary" className={status.collections.huggingface ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-muted text-muted-foreground"}>
+              HF V1 {status.collections.huggingface ? "✓" : "✗"}
+            </Badge>
+            <Badge variant="secondary" className={status.collections.voyageV2 ? "bg-primary/10 text-primary border-primary/20" : "bg-muted text-muted-foreground"}>
+              Voyage V2 {status.collections.voyageV2 ? "✓" : "✗"}
+            </Badge>
+            <Badge variant="secondary" className={status.collections.huggingfaceV2 ? "bg-primary/10 text-primary border-primary/20" : "bg-muted text-muted-foreground"}>
+              HF V2 {status.collections.huggingfaceV2 ? "✓" : "✗"}
+            </Badge>
           </div>
         </div>
+        {!allV2Ready && (
+          <div className="mt-3 flex justify-end">
+            <Button
+              size="sm"
+              onClick={handleInitialize}
+              disabled={isInitializing}
+              className="bg-primary hover:bg-primary/90 text-white text-xs"
+            >
+              {isInitializing ? (
+                <>
+                  <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
+                  Upgrading...
+                </>
+              ) : "Upgrade to V2"}
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
 
   // Not initialized - show setup button
   return (
-    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+    <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center">
-            <svg
-              className="w-5 h-5 text-amber-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-              />
-            </svg>
+          <div className="w-8 h-8 bg-amber-500/20 rounded-full flex items-center justify-center">
+            <AlertTriangle className="w-5 h-5 text-amber-400" />
           </div>
           <div>
-            <h3 className="text-sm font-medium text-amber-800">
+            <h3 className="text-sm font-medium text-amber-400">
               First-time Setup Required
             </h3>
-            <p className="text-xs text-amber-600">
+            <p className="text-xs text-amber-400/70">
               Initialize the vector database to enable document search
             </p>
           </div>
         </div>
 
-        <button
+        <Button
           onClick={handleInitialize}
           disabled={isInitializing}
-          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+          className="bg-gradient-to-r from-[var(--gradient-start)] to-[var(--gradient-end)] hover:opacity-90 text-white"
         >
           {isInitializing ? (
             <>
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               Initializing...
             </>
           ) : (
             <>
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
+              <Zap className="w-4 h-4 mr-2" />
               Initialize Weaviate
             </>
           )}
-        </button>
+        </Button>
       </div>
 
-      {/* Show partial status if one collection exists */}
+      {/* Show partial status if any collection exists */}
       {status && (status.collections.voyage || status.collections.huggingface) && (
-        <div className="mt-3 flex gap-2">
-          <span
-            className={`px-2 py-1 text-xs rounded-full ${
-              status.collections.voyage
-                ? "bg-green-100 text-green-700"
-                : "bg-gray-100 text-gray-500"
-            }`}
-          >
-            Voyage {status.collections.voyage ? "✓" : "✗"}
-          </span>
-          <span
-            className={`px-2 py-1 text-xs rounded-full ${
-              status.collections.huggingface
-                ? "bg-green-100 text-green-700"
-                : "bg-gray-100 text-gray-500"
-            }`}
-          >
-            HuggingFace {status.collections.huggingface ? "✓" : "✗"}
-          </span>
+        <div className="mt-3 flex gap-2 flex-wrap">
+          <Badge variant="secondary" className={status.collections.voyage ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-muted text-muted-foreground"}>
+            Voyage V1 {status.collections.voyage ? "✓" : "✗"}
+          </Badge>
+          <Badge variant="secondary" className={status.collections.huggingface ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-muted text-muted-foreground"}>
+            HF V1 {status.collections.huggingface ? "✓" : "✗"}
+          </Badge>
+          <Badge variant="secondary" className={status.collections?.voyageV2 ? "bg-primary/10 text-primary border-primary/20" : "bg-muted text-muted-foreground"}>
+            Voyage V2 {status.collections?.voyageV2 ? "✓" : "✗"}
+          </Badge>
+          <Badge variant="secondary" className={status.collections?.huggingfaceV2 ? "bg-primary/10 text-primary border-primary/20" : "bg-muted text-muted-foreground"}>
+            HF V2 {status.collections?.huggingfaceV2 ? "✓" : "✗"}
+          </Badge>
         </div>
       )}
 
       {error && (
-        <div className="mt-3 p-2 bg-red-100 border border-red-200 rounded text-xs text-red-600">
+        <div className="mt-3 p-2 bg-destructive/10 border border-destructive/20 rounded text-xs text-destructive">
           {error}
         </div>
       )}

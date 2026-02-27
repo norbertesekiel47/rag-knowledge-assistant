@@ -9,6 +9,7 @@ import {
 } from "@/lib/constants";
 import { EmbeddingProvider } from "@/lib/embeddings/config";
 import type { Document } from "@/lib/supabase/types";
+import { Upload, FileText, FileCode, File, Check, Loader2 } from "lucide-react";
 
 interface FileUploadProps {
   onUploadComplete: (document: Document) => void;
@@ -30,7 +31,7 @@ export function FileUpload({
 }: FileUploadProps) {
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
 
-  const uploadFile = useCallback (async (file: File) => {
+  const uploadFile = useCallback(async (file: File) => {
     setUploadingFiles((prev) => [
       ...prev,
       { file, progress: 0, status: "uploading" },
@@ -49,7 +50,6 @@ export function FileUpload({
       const data = await response.json();
 
       if (!response.ok) {
-        // Check if it's a duplicate file error
         if (response.status === 409 && data.duplicate) {
           throw new Error(data.error);
         }
@@ -119,6 +119,18 @@ export function FileUpload({
     multiple: true,
   });
 
+  const getFileIcon = (fileName: string) => {
+    const ext = fileName.split(".").pop()?.toLowerCase();
+    switch (ext) {
+      case "pdf":
+        return <FileText className="w-6 h-6 text-red-400" />;
+      case "md":
+        return <FileCode className="w-6 h-6 text-blue-400" />;
+      default:
+        return <File className="w-6 h-6 text-muted-foreground" />;
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Drop zone */}
@@ -126,43 +138,32 @@ export function FileUpload({
         {...getRootProps()}
         className={`
           border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
-          transition-colors duration-200
+          transition-all duration-200
           ${
             isDragActive
-              ? "border-blue-500 bg-blue-50"
-              : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+              ? "border-primary bg-primary/5"
+              : "border-border hover:border-primary/50 hover:bg-card"
           }
         `}
       >
         <input {...getInputProps()} />
         <div className="space-y-2">
-          <svg
-            className={`mx-auto h-12 w-12 ${
-              isDragActive ? "text-blue-500" : "text-gray-400"
+          <Upload
+            className={`mx-auto h-10 w-10 ${
+              isDragActive ? "text-primary" : "text-muted-foreground"
             }`}
-            stroke="currentColor"
-            fill="none"
-            viewBox="0 0 48 48"
-            aria-hidden="true"
-          >
-            <path
-              d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          />
           {isDragActive ? (
-            <p className="text-blue-600 font-medium">Drop files here...</p>
+            <p className="text-primary font-medium">Drop files here...</p>
           ) : (
             <>
-              <p className="text-gray-600">
-                <span className="font-medium text-blue-600 hover:text-blue-500">
+              <p className="text-muted-foreground">
+                <span className="font-medium text-primary hover:text-[var(--gradient-mid)]">
                   Click to upload
                 </span>{" "}
                 or drag and drop
               </p>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground/60">
                 {ALLOWED_EXTENSIONS.join(", ")} up to {MAX_FILE_SIZE_DISPLAY}
               </p>
             </>
@@ -178,39 +179,27 @@ export function FileUpload({
               key={`${uploadingFile.file.name}-${index}`}
               className={`
                 flex items-center justify-between p-3 rounded-lg
-                ${uploadingFile.status === "error" ? "bg-red-50" : "bg-gray-50"}
+                ${uploadingFile.status === "error" ? "bg-destructive/10" : "bg-card"}
               `}
             >
               <div className="flex items-center space-x-3 min-w-0">
-                <FileIcon
-                  fileType={uploadingFile.file.name.split(".").pop() || ""}
-                />
-                <span className="text-sm text-gray-700 truncate">
+                {getFileIcon(uploadingFile.file.name)}
+                <span className="text-sm text-foreground truncate">
                   {uploadingFile.file.name}
                 </span>
               </div>
               <div className="flex items-center space-x-2">
                 {uploadingFile.status === "uploading" && (
-                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  <Loader2 className="w-4 h-4 text-primary animate-spin" />
                 )}
                 {uploadingFile.status === "success" && (
-                  <svg
-                    className="w-5 h-5 text-green-500"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
+                  <Check className="w-5 h-5 text-green-500" />
                 )}
                 {uploadingFile.status === "error" && (
                   <span className={`text-sm ${
-                    uploadingFile.error?.includes("already") 
-                      ? "text-amber-600" 
-                      : "text-red-600"
+                    uploadingFile.error?.includes("already")
+                      ? "text-amber-500"
+                      : "text-destructive"
                   }`}>
                     {uploadingFile.error}
                   </span>
@@ -220,26 +209,6 @@ export function FileUpload({
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function FileIcon({ fileType }: { fileType: string }) {
-  const colors: Record<string, string> = {
-    pdf: "text-red-500",
-    txt: "text-gray-500",
-    md: "text-blue-500",
-  };
-
-  return (
-    <div className={`shrink-0 ${colors[fileType] || "text-gray-400"}`}>
-      <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
-        <path
-          fillRule="evenodd"
-          d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
-          clipRule="evenodd"
-        />
-      </svg>
     </div>
   );
 }

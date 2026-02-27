@@ -7,9 +7,10 @@ import {
   isAllowedFile,
   getFileType,
 } from "@/lib/constants";
-import { processDocument } from "@/lib/processing/processor";
+import { processDocumentV2 } from "@/lib/processing/processor";
 import { EmbeddingProvider, DEFAULT_EMBEDDING_PROVIDER } from "@/lib/embeddings";
 import { checkRequestRateLimit } from "@/lib/rateLimit/middleware";
+import { logger } from "@/lib/utils/logger";
 
 const FILE_TYPE_TO_MIME: Record<string, string> = {
   pdf: "application/pdf",
@@ -56,16 +57,16 @@ export async function POST(request: NextRequest): Promise<Response> {
       .single();
 
     if (existingDoc) {
-      const statusMessage = existingDoc.status === "processed" 
-        ? "already processed" 
+      const statusMessage = existingDoc.status === "processed"
+        ? "already processed"
         : existingDoc.status === "processing"
         ? "currently being processed"
         : existingDoc.status === "failed"
         ? "previously failed (delete it first to retry)"
         : "already uploaded";
-        
+
       return NextResponse.json(
-        { 
+        {
           error: `File "${file.name}" is ${statusMessage} with ${embeddingProvider === "voyage" ? "Voyage AI" : "HuggingFace"}.`,
           duplicate: true,
           existingDocument: existingDoc
@@ -114,7 +115,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       });
 
     if (uploadError) {
-      console.error("Storage upload error:", uploadError);
+      logger.error("Storage upload error", "documents", {
+        error: { message: uploadError.message },
+      });
       return NextResponse.json(
         { error: "Failed to upload file to storage" },
         { status: 500 }
@@ -137,29 +140,35 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     if (dbError) {
       await supabase.storage.from("documents").remove([storagePath]);
-      console.error("Database insert error:", dbError);
+      logger.error("Database insert error", "documents", {
+        error: { message: dbError.message },
+      });
       return NextResponse.json(
         { error: "Failed to create document record" },
         { status: 500 }
       );
     }
 
-    // Trigger processing with selected embedding provider
-    processDocument(document.id, embeddingProvider)
+    // Trigger V2 processing with selected embedding provider
+    processDocumentV2(document.id, embeddingProvider)
       .then((result) => {
         if (result.success) {
-          console.log(`Background processing complete: ${result.chunks.length} chunks (${embeddingProvider})`);
+          logger.info(`V2 Background processing complete: ${result.chunkCount} enriched chunks (${embeddingProvider})`, "documents");
         } else {
-          console.error(`Background processing failed: ${result.error}`);
+          logger.error(`V2 Background processing failed: ${result.error}`, "documents");
         }
       })
-      .catch((error) => {
-        console.error("Background processing error:", error);
+      .catch((err) => {
+        logger.error("V2 Background processing error", "documents", {
+          error: err instanceof Error ? { message: err.message } : { error: String(err) },
+        });
       });
 
     return NextResponse.json({ document }, { status: 201 });
   } catch (error) {
-    console.error("Upload error:", error);
+    logger.error("Upload error", "documents", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -183,31 +192,39 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   const userId = rateLimit.userId!;
   try {
-    //const { userId } = await auth();
-
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Parse pagination params
+    const url = request.nextUrl;
+    const limit = Math.min(Math.max(parseInt(url.searchParams.get("limit") || "50", 10) || 50, 1), 100);
+    const offset = Math.max(parseInt(url.searchParams.get("offset") || "0", 10) || 0, 0);
+
     const supabase = createServiceClient();
 
-    const { data: documents, error } = await supabase
+    const { data: documents, error, count } = await supabase
       .from("documents")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("user_id", userId)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) {
-      console.error("Database query error:", error);
+      logger.error("Database query error", "documents", {
+        error: { message: error.message },
+      });
       return NextResponse.json(
         { error: "Failed to fetch documents" },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ documents });
+    return NextResponse.json({ documents, total: count ?? 0, limit, offset });
   } catch (error) {
-    console.error("Fetch error:", error);
+    logger.error("Fetch error", "documents", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

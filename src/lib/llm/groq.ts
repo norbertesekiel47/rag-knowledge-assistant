@@ -1,5 +1,7 @@
 import Groq from "groq-sdk";
 import { LLMProvider, LLMMessage, StreamCallbacks, MODEL_IDS } from "./types";
+import { withRetryAndTimeout, isTransientError } from "@/lib/utils/retry";
+import { logger } from "@/lib/utils/logger";
 
 let groqClient: Groq | null = null;
 
@@ -27,6 +29,41 @@ function stripThinkingTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 }
 
+/**
+ * Non-streaming Groq call for internal reasoning (classifier, decomposer, etc.)
+ */
+export async function callGroqNonStreaming(
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  temperature: number = 0,
+  maxTokens: number = 512
+): Promise<string> {
+  const client = getGroqClient();
+
+  const content = await withRetryAndTimeout(
+    async () => {
+      const response = await client.chat.completions.create({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature,
+        max_tokens: maxTokens,
+        stream: false,
+      });
+
+      return response.choices[0]?.message?.content?.trim() || "";
+    },
+    { maxRetries: 2, initialDelayMs: 2000, isRetryable: isTransientError },
+    { timeoutMs: 30000 },
+    "groq-non-streaming"
+  );
+
+  return stripThinkingTags(content);
+}
+
 export async function streamGroqResponse(
   provider: LLMProvider,
   systemPrompt: string,
@@ -39,19 +76,26 @@ export async function streamGroqResponse(
   const modelId = MODEL_IDS[provider];
 
   try {
-    const stream = await client.chat.completions.create({
-      model: modelId,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...messages.map((msg) => ({
-          role: msg.role as "user" | "assistant",
-          content: msg.content,
-        })),
-      ],
-      temperature,
-      max_tokens: maxTokens,
-      stream: true,
-    });
+    const stream = await withRetryAndTimeout(
+      async () => {
+        return client.chat.completions.create({
+          model: modelId,
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...messages.map((msg) => ({
+              role: msg.role as "user" | "assistant",
+              content: msg.content,
+            })),
+          ],
+          temperature,
+          max_tokens: maxTokens,
+          stream: true,
+        });
+      },
+      { maxRetries: 1, initialDelayMs: 3000, isRetryable: isTransientError },
+      { timeoutMs: 45000 },
+      "groq-stream-init"
+    );
 
     let fullResponse = "";
     let isInsideThinkTag = false;
@@ -91,7 +135,11 @@ export async function streamGroqResponse(
     const cleanedResponse = stripThinkingTags(fullResponse);
     callbacks.onComplete(cleanedResponse);
   } catch (error) {
-    console.error("Groq streaming error:", error);
+    logger.error(
+      "Groq streaming failed",
+      "groq",
+      { error: error instanceof Error ? { message: error.message } : { error: String(error) } }
+    );
     callbacks.onError(
       error instanceof Error ? error : new Error("Groq streaming failed")
     );

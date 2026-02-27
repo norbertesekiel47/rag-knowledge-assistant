@@ -19,7 +19,6 @@ export const EMBEDDING_CONFIGS: Record<EmbeddingProvider, EmbeddingConfig> = {
       "Free tier: 3 requests per minute (RPM)",
       "Free tier: 10,000 tokens per minute (TPM)",
       "Add payment method at dashboard.voyageai.com for higher limits",
-      "200M free tokens even with payment method added",
     ],
     collectionSuffix: "Voyage",
   },
@@ -31,7 +30,7 @@ export const EMBEDDING_CONFIGS: Record<EmbeddingProvider, EmbeddingConfig> = {
     limitations: [
       "Slightly lower retrieval quality than Voyage",
       "May have occasional cold starts (model loading)",
-      "Best for development and testing",
+      "Best for development and testing as it is unlimited",
     ],
     collectionSuffix: "HuggingFace",
   },
@@ -39,7 +38,8 @@ export const EMBEDDING_CONFIGS: Record<EmbeddingProvider, EmbeddingConfig> = {
 
 export const DEFAULT_EMBEDDING_PROVIDER: EmbeddingProvider = "huggingface";
 
-// Get collection name based on provider
-export function getCollectionName(provider: EmbeddingProvider): string {
-  return `DocumentChunk${EMBEDDING_CONFIGS[provider].collectionSuffix}`;
+// Get collection name based on provider and schema version
+export function getCollectionName(provider: EmbeddingProvider, version: 1 | 2 = 1): string {
+  const suffix = version === 2 ? "V2" : "";
+  return `DocumentChunk${EMBEDDING_CONFIGS[provider].collectionSuffix}${suffix}`;
 }

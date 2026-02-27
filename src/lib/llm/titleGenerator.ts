@@ -1,4 +1,5 @@
 import Groq from "groq-sdk";
+import { logger } from "@/lib/utils/logger";
 
 let groqClient: Groq | null = null;
 
@@ -54,7 +55,9 @@ Examples:
     // Clean up the title
     return cleanTitle(title) || fallbackTitle(firstMessage);
   } catch (error) {
-    console.error("Error generating chat title:", error);
+    logger.error("Error generating chat title", "llm", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     return fallbackTitle(firstMessage);
   }
 }

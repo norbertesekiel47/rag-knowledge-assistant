@@ -2,6 +2,8 @@ import { Webhook } from "svix";
 import { headers } from "next/headers";
 import { WebhookEvent } from "@clerk/nextjs/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { deleteAllUserChunks } from "@/lib/weaviate/vectors";
+import { logger } from "@/lib/utils/logger";
 
 export async function POST(req: Request) {
   // Get the webhook secret from environment
@@ -41,7 +43,9 @@ export async function POST(req: Request) {
       "svix-signature": svix_signature,
     }) as WebhookEvent;
   } catch (err) {
-    console.error("Error verifying webhook:", err);
+    logger.error("Error verifying webhook", "clerk-webhook", {
+      error: err instanceof Error ? { message: err.message } : { error: String(err) },
+    });
     return new Response("Error: Verification failed", {
       status: 400,
     });
@@ -55,7 +59,9 @@ export async function POST(req: Request) {
     const primaryEmail = email_addresses?.[0]?.email_address;
 
     if (!primaryEmail) {
-      console.error("No email address found for user:", id);
+      logger.error("No email address found for user", "clerk-webhook", {
+        userId: id,
+      });
       return new Response("Error: No email address", { status: 400 });
     }
 
@@ -74,11 +80,13 @@ export async function POST(req: Request) {
     );
 
     if (error) {
-      console.error("Error upserting user to Supabase:", error);
+      logger.error("Error upserting user to Supabase", "clerk-webhook", {
+        error: { message: error.message },
+      });
       return new Response("Error: Database operation failed", { status: 500 });
     }
 
-    console.log(`User ${eventType === "user.created" ? "created" : "updated"}: ${id}`);
+    logger.info(`User ${eventType === "user.created" ? "created" : "updated"}: ${id}`, "clerk-webhook");
   }
 
   if (eventType === "user.deleted") {
@@ -90,15 +98,46 @@ export async function POST(req: Request) {
 
     const supabase = createServiceClient();
 
-    // Delete user (cascade will remove all related data)
+    // 1. Delete all vector data from Weaviate + pgvector (before DB cascade)
+    try {
+      await deleteAllUserChunks(id);
+    } catch (err) {
+      logger.error("Weaviate/pgvector cleanup failed (continuing)", "clerk-webhook", {
+        error: err instanceof Error ? { message: err.message } : { error: String(err) },
+      });
+    }
+
+    // 2. Explicitly delete from tables that may lack CASCADE constraints
+    //    (chunk_feedback_scores is a VIEW on chunk_feedback, not a table)
+    const orphanTables = [
+      "chunk_feedback",
+      "analytics_document_usage",
+      "analytics_daily_stats",
+    ] as const;
+
+    for (const table of orphanTables) {
+      const { error: cleanupErr } = await supabase
+        .from(table)
+        .delete()
+        .eq("user_id", id);
+      if (cleanupErr) {
+        logger.warn(`Cleanup of ${table} failed (continuing)`, "clerk-webhook", {
+          error: { message: cleanupErr.message },
+        });
+      }
+    }
+
+    // 3. Delete user row — CASCADE handles documents, sessions, messages, etc.
     const { error } = await supabase.from("users").delete().eq("id", id);
 
     if (error) {
-      console.error("Error deleting user from Supabase:", error);
+      logger.error("Error deleting user from Supabase", "clerk-webhook", {
+        error: { message: error.message },
+      });
       return new Response("Error: Database operation failed", { status: 500 });
     }
 
-    console.log(`User deleted: ${id}`);
+    logger.info(`User deleted with full cleanup: ${id}`, "clerk-webhook");
   }
 
   return new Response("Webhook processed", { status: 200 });

@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { deleteDocumentChunks } from "@/lib/weaviate/vectors";
 import { EmbeddingProvider } from "@/lib/embeddings/config";
 import { checkRequestRateLimit } from "@/lib/rateLimit/middleware";
+import { logger } from "@/lib/utils/logger";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -54,9 +55,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams): Pro
         documentId,
         document.embedding_provider as EmbeddingProvider
       );
-      console.log(`Deleted chunks for document ${documentId} from Weaviate`);
+      logger.info(`Deleted chunks for document ${documentId} from Weaviate`, "documents");
     } catch (weaviateError) {
-      console.error("Error deleting chunks from Weaviate:", weaviateError);
+      logger.error("Error deleting chunks from Weaviate", "documents", {
+        error: weaviateError instanceof Error ? { message: weaviateError.message } : { error: String(weaviateError) },
+      });
       // Continue with deletion even if Weaviate fails
       // The chunks will be orphaned but won't affect functionality
     }
@@ -68,10 +71,14 @@ export async function DELETE(request: NextRequest, { params }: RouteParams): Pro
         .remove([document.storage_path]);
 
       if (storageError) {
-        console.error("Error deleting file from storage:", storageError);
+        logger.error("Error deleting file from storage", "documents", {
+          error: { message: storageError.message },
+        });
       }
     } catch (storageError) {
-      console.error("Error deleting file from storage:", storageError);
+      logger.error("Error deleting file from storage", "documents", {
+        error: storageError instanceof Error ? { message: storageError.message } : { error: String(storageError) },
+      });
       // Continue with deletion even if storage fails
     }
 
@@ -83,7 +90,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams): Pro
       .eq("user_id", userId);
 
     if (deleteError) {
-      console.error("Error deleting document record:", deleteError);
+      logger.error("Error deleting document record", "documents", {
+        error: { message: deleteError.message },
+      });
       return NextResponse.json(
         { error: "Failed to delete document" },
         { status: 500 }
@@ -96,7 +105,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams): Pro
       documentId,
     });
   } catch (error) {
-    console.error("Delete document error:", error);
+    logger.error("Delete document error", "documents", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -145,7 +156,9 @@ export async function GET(request: NextRequest, { params }: RouteParams): Promis
 
     return NextResponse.json({ document });
   } catch (error) {
-    console.error("Fetch document error:", error);
+    logger.error("Fetch document error", "documents", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

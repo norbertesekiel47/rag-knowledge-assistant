@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { logger } from "@/lib/utils/logger";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -38,7 +39,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       .order("created_at", { ascending: true });
 
     if (messagesError) {
-      console.error("Error fetching messages:", messagesError);
+      logger.error("Error fetching messages", "sessions", {
+        error: { message: messagesError.message },
+      });
       return NextResponse.json(
         { error: "Failed to fetch messages" },
         { status: 500 }
@@ -47,7 +50,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ session, messages });
   } catch (error) {
-    console.error("Session fetch error:", error);
+    logger.error("Session fetch error", "sessions", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -91,7 +96,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       .single();
 
     if (error) {
-      console.error("Error updating session:", error);
+      logger.error("Error updating session", "sessions", {
+        error: { message: error.message },
+      });
       return NextResponse.json(
         { error: "Failed to update session" },
         { status: 500 }
@@ -100,7 +107,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ session });
   } catch (error) {
-    console.error("Session update error:", error);
+    logger.error("Session update error", "sessions", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -128,7 +137,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       .eq("user_id", userId);
 
     if (error) {
-      console.error("Error deleting session:", error);
+      logger.error("Error deleting session", "sessions", {
+        error: { message: error.message },
+      });
       return NextResponse.json(
         { error: "Failed to delete session" },
         { status: 500 }
@@ -137,7 +148,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Session deletion error:", error);
+    logger.error("Session deletion error", "sessions", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

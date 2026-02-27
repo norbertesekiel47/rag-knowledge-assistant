@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { processDocument } from "@/lib/processing/processor";
+import { processDocument, processDocumentV2 } from "@/lib/processing/processor";
 import { checkRequestRateLimit } from "@/lib/rateLimit/middleware";
+import { EmbeddingProvider, DEFAULT_EMBEDDING_PROVIDER } from "@/lib/embeddings";
+import { logger } from "@/lib/utils/logger";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -70,8 +72,32 @@ export async function POST(request: NextRequest, { params }: RouteParams): Promi
       );
     }
 
-    // 4. Process the document
-    const result = await processDocument(documentId);
+    // 4. Process the document (use V2 pipeline by default, V1 as fallback)
+    const version = request.nextUrl.searchParams.get("version");
+    const embeddingProvider = (request.nextUrl.searchParams.get("embeddingProvider") || DEFAULT_EMBEDDING_PROVIDER) as EmbeddingProvider;
+
+    if (version === "1") {
+      // Legacy V1 pipeline
+      const result = await processDocument(documentId, embeddingProvider);
+
+      if (!result.success) {
+        return NextResponse.json(
+          { error: result.error || "Processing failed" },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        documentId: result.documentId,
+        chunkCount: result.chunks.length,
+        pipeline: "v1",
+        preview: result.chunks[0]?.content.substring(0, 200) + "...",
+      });
+    }
+
+    // V2 pipeline (default)
+    const result = await processDocumentV2(documentId, embeddingProvider);
 
     if (!result.success) {
       return NextResponse.json(
@@ -84,13 +110,14 @@ export async function POST(request: NextRequest, { params }: RouteParams): Promi
     return NextResponse.json({
       success: true,
       documentId: result.documentId,
-      chunkCount: result.chunks.length,
-      // Include first chunk as preview (for debugging)
-      preview: result.chunks[0]?.content.substring(0, 200) + "...",
+      chunkCount: result.chunkCount,
+      pipeline: "v2",
     });
 
   } catch (error) {
-    console.error("Processing error:", error);
+    logger.error("Processing error", "document-process", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

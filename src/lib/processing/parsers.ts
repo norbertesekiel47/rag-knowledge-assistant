@@ -2,6 +2,7 @@ import { extractText } from "unpdf";
 import matter from "gray-matter";
 import { remark } from "remark";
 import strip from "strip-markdown";
+import { logger } from "@/lib/utils/logger";
 
 export interface ParsedDocument {
   content: string;
@@ -29,7 +30,9 @@ export async function parsePDF(buffer: Buffer): Promise<ParsedDocument> {
       },
     };
   } catch (error) {
-    console.error("PDF parsing error:", error);
+    logger.error("PDF parsing error", "processing", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     throw new Error(
       `Failed to parse PDF: ${error instanceof Error ? error.message : "Unknown error"}`
     );
@@ -54,7 +57,9 @@ export async function parseMarkdown(content: string): Promise<ParsedDocument> {
       metadata: frontmatter,
     };
   } catch (error) {
-    console.error("Markdown parsing error:", error);
+    logger.error("Markdown parsing error", "processing", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     throw new Error(
       `Failed to parse Markdown: ${error instanceof Error ? error.message : "Unknown error"}`
     );

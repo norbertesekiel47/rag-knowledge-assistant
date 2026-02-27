@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+        env:
+          # Stub env vars for build-time type checking (not used at runtime)
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: stub
+          CLERK_SECRET_KEY: stub
+          NEXT_PUBLIC_SUPABASE_URL: https://stub.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: stub
+          SUPABASE_SERVICE_ROLE_KEY: stub
+          GROQ_API_KEY: stub
+          WEAVIATE_URL: https://stub.weaviate.network
+          WEAVIATE_API_KEY: stub
+          VOYAGE_API_KEY: stub
+          HUGGINGFACE_API_KEY: stub
+
+      - name: Audit dependencies
+        run: npx audit-ci@^7 --moderate --allowlist GHSA-3ppc-4f35-3m26 GHSA-6rw7-vpxm-498p GHSA-w7fw-mjwx-w883

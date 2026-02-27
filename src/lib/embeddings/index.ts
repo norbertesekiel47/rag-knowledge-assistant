@@ -1,5 +1,8 @@
 import { EmbeddingProvider } from "./config";
 import { InferenceClient } from "@huggingface/inference";
+import { cacheGet, cacheSet, embeddingCacheKey } from "@/lib/redis/cache";
+import { withRetryAndTimeout, isTransientError } from "@/lib/utils/retry";
+import { logger } from "@/lib/utils/logger";
 
 export * from "./config";
 
@@ -11,23 +14,30 @@ async function generateVoyageEmbeddings(texts: string[]): Promise<number[][]> {
     throw new Error("Missing VOYAGE_API_KEY environment variable");
   }
 
-  // Dynamic import to avoid loading if not used
-  const { VoyageAIClient } = await import("voyageai");
-  const client = new VoyageAIClient({ apiKey });
+  return withRetryAndTimeout(
+    async () => {
+      // Dynamic import to avoid loading if not used
+      const { VoyageAIClient } = await import("voyageai");
+      const client = new VoyageAIClient({ apiKey });
 
-  const response = await client.embed({
-    input: texts,
-    model: "voyage-3-lite",
-    inputType: "document",
-  });
+      const response = await client.embed({
+        input: texts,
+        model: "voyage-3-lite",
+        inputType: "document",
+      });
 
-  const embeddings = response.data?.map((item) => item.embedding) ?? [];
+      const embeddings = response.data?.map((item) => item.embedding) ?? [];
 
-  if (embeddings.length !== texts.length) {
-    throw new Error(`Expected ${texts.length} embeddings, got ${embeddings.length}`);
-  }
+      if (embeddings.length !== texts.length) {
+        throw new Error(`Expected ${texts.length} embeddings, got ${embeddings.length}`);
+      }
 
-  return embeddings.filter((e): e is number[] => e !== undefined);
+      return embeddings.filter((e): e is number[] => e !== undefined);
+    },
+    { maxRetries: 2, initialDelayMs: 2000, isRetryable: isTransientError },
+    { timeoutMs: 20000 },
+    "voyage-embed"
+  );
 }
 
 async function generateVoyageQueryEmbedding(query: string): Promise<number[]> {
@@ -37,22 +47,29 @@ async function generateVoyageQueryEmbedding(query: string): Promise<number[]> {
     throw new Error("Missing VOYAGE_API_KEY environment variable");
   }
 
-  const { VoyageAIClient } = await import("voyageai");
-  const client = new VoyageAIClient({ apiKey });
+  return withRetryAndTimeout(
+    async () => {
+      const { VoyageAIClient } = await import("voyageai");
+      const client = new VoyageAIClient({ apiKey });
 
-  const response = await client.embed({
-    input: [query],
-    model: "voyage-3-lite",
-    inputType: "query",
-  });
+      const response = await client.embed({
+        input: [query],
+        model: "voyage-3-lite",
+        inputType: "query",
+      });
 
-  const embedding = response.data?.[0]?.embedding;
+      const embedding = response.data?.[0]?.embedding;
 
-  if (!embedding) {
-    throw new Error("No embedding returned for query");
-  }
+      if (!embedding) {
+        throw new Error("No embedding returned for query");
+      }
 
-  return embedding;
+      return embedding;
+    },
+    { maxRetries: 2, initialDelayMs: 2000, isRetryable: isTransientError },
+    { timeoutMs: 20000 },
+    "voyage-query-embed"
+  );
 }
 
 // Hugging Face implementation - Using official SDK
@@ -62,12 +79,12 @@ let hfClient: InferenceClient | null = null;
 
 function getHfClient(): InferenceClient {
   if (hfClient) return hfClient;
-  
+
   const apiKey = process.env.HUGGINGFACE_API_KEY;
   if (!apiKey) {
     throw new Error("Missing HUGGINGFACE_API_KEY environment variable");
   }
-  
+
   hfClient = new InferenceClient(apiKey);
   return hfClient;
 }
@@ -82,15 +99,26 @@ async function generateHuggingFaceEmbeddings(texts: string[]): Promise<number[][
 
   // Process one at a time to avoid issues
   for (const text of texts) {
-    const response = await client.featureExtraction({
-      model: HF_MODEL_ID,
-      inputs: text,
-    });
+    const embedding = await withRetryAndTimeout(
+      async () => {
+        const response = await client.featureExtraction({
+          model: HF_MODEL_ID,
+          inputs: text,
+        });
 
-    // Response is number[] for single input
-    if (Array.isArray(response)) {
-      allEmbeddings.push(response as number[]);
-    }
+        // Response is number[] for single input
+        if (Array.isArray(response)) {
+          return response as number[];
+        }
+
+        throw new Error("Unexpected embedding format from HuggingFace");
+      },
+      { maxRetries: 2, initialDelayMs: 2000, isRetryable: isTransientError },
+      { timeoutMs: 20000 },
+      "hf-embed"
+    );
+
+    allEmbeddings.push(embedding);
   }
 
   return allEmbeddings;
@@ -99,35 +127,23 @@ async function generateHuggingFaceEmbeddings(texts: string[]): Promise<number[][
 async function generateHuggingFaceQueryEmbedding(query: string): Promise<number[]> {
   const client = getHfClient();
 
-  const response = await client.featureExtraction({
-    model: HF_MODEL_ID,
-    inputs: query,
-  });
+  return withRetryAndTimeout(
+    async () => {
+      const response = await client.featureExtraction({
+        model: HF_MODEL_ID,
+        inputs: query,
+      });
 
-  if (Array.isArray(response)) {
-    return response as number[];
-  }
+      if (Array.isArray(response)) {
+        return response as number[];
+      }
 
-  throw new Error("Unexpected embedding format from Hugging Face API");
-}
-
-function meanPool(tokenEmbeddings: number[][]): number[] {
-  if (tokenEmbeddings.length === 0) return [];
-
-  const dimensions = tokenEmbeddings[0].length;
-  const pooled = new Array(dimensions).fill(0);
-
-  for (const embedding of tokenEmbeddings) {
-    for (let i = 0; i < dimensions; i++) {
-      pooled[i] += embedding[i];
-    }
-  }
-
-  for (let i = 0; i < dimensions; i++) {
-    pooled[i] /= tokenEmbeddings.length;
-  }
-
-  return pooled;
+      throw new Error("Unexpected embedding format from Hugging Face API");
+    },
+    { maxRetries: 2, initialDelayMs: 2000, isRetryable: isTransientError },
+    { timeoutMs: 20000 },
+    "hf-query-embed"
+  );
 }
 
 // Unified interface
@@ -135,13 +151,22 @@ export async function generateEmbeddings(
   texts: string[],
   provider: EmbeddingProvider
 ): Promise<number[][]> {
-  switch (provider) {
-    case "voyage":
-      return generateVoyageEmbeddings(texts);
-    case "huggingface":
-      return generateHuggingFaceEmbeddings(texts);
-    default:
-      throw new Error(`Unsupported embedding provider: ${provider}`);
+  try {
+    switch (provider) {
+      case "voyage":
+        return await generateVoyageEmbeddings(texts);
+      case "huggingface":
+        return await generateHuggingFaceEmbeddings(texts);
+      default:
+        throw new Error(`Unsupported embedding provider: ${provider}`);
+    }
+  } catch (error) {
+    logger.error(
+      `Embedding generation failed (${provider}, ${texts.length} texts)`,
+      "embeddings",
+      { error: error instanceof Error ? { message: error.message } : { error: String(error) } }
+    );
+    throw error;
   }
 }
 
@@ -149,12 +174,24 @@ export async function generateQueryEmbedding(
   query: string,
   provider: EmbeddingProvider
 ): Promise<number[]> {
+  // Check cache first
+  const key = embeddingCacheKey(provider, query);
+  const cached = await cacheGet<number[]>(key);
+  if (cached) return cached;
+
+  let embedding: number[];
   switch (provider) {
     case "voyage":
-      return generateVoyageQueryEmbedding(query);
+      embedding = await generateVoyageQueryEmbedding(query);
+      break;
     case "huggingface":
-      return generateHuggingFaceQueryEmbedding(query);
+      embedding = await generateHuggingFaceQueryEmbedding(query);
+      break;
     default:
       throw new Error(`Unsupported embedding provider: ${provider}`);
   }
+
+  // Cache for 24 hours
+  await cacheSet(key, embedding, 86400);
+  return embedding;
 }

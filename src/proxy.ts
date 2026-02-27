@@ -23,5 +23,3 @@ export const config = {
     "/(api|trpc)(.*)",
   ],
 };
-
-console.log("Middleware hit");

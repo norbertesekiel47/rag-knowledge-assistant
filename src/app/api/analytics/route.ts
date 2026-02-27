@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { getAnalyticsSummary } from "@/lib/analytics";
+import { getAnalyticsSummary, getEvaluationSummary } from "@/lib/analytics";
+import { logger } from "@/lib/utils/logger";
 
 export async function GET() {
   try {
@@ -10,11 +11,16 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const analytics = await getAnalyticsSummary(userId);
+    const [analytics, evaluation] = await Promise.all([
+      getAnalyticsSummary(userId),
+      getEvaluationSummary(userId),
+    ]);
 
-    return NextResponse.json(analytics);
+    return NextResponse.json({ ...analytics, evaluation });
   } catch (error) {
-    console.error("Analytics fetch error:", error);
+    logger.error("Analytics fetch error", "analytics", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     return NextResponse.json(
       { error: "Failed to fetch analytics" },
       { status: 500 }

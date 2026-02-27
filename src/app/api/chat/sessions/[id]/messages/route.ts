@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { logger } from "@/lib/utils/logger";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -54,7 +55,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .single();
 
     if (error) {
-      console.error("Error creating message:", error);
+      logger.error("Error creating message", "messages", {
+        error: { message: error.message },
+      });
       return NextResponse.json(
         { error: "Failed to create message" },
         { status: 500 }
@@ -69,7 +72,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ message }, { status: 201 });
   } catch (error) {
-    console.error("Message creation error:", error);
+    logger.error("Message creation error", "messages", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

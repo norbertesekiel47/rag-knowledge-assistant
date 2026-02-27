@@ -1,4 +1,9 @@
 import { createServiceClient } from "@/lib/supabase/server";
+import { getEvaluationSummary } from "@/lib/validation/store";
+import { logger } from "@/lib/utils/logger";
+
+export type { EvaluationSummary } from "@/lib/validation/store";
+export { getEvaluationSummary };
 
 export interface QueryAnalytics {
   userId: string;
@@ -37,7 +42,9 @@ export async function trackQuery(data: QueryAnalytics): Promise<void> {
       .single();
 
     if (queryError) {
-      console.error("Error tracking query:", queryError);
+      logger.error("Error tracking query", "analytics", {
+        error: { message: queryError.message },
+      });
       return;
     }
 
@@ -56,14 +63,18 @@ export async function trackQuery(data: QueryAnalytics): Promise<void> {
         .insert(usageRecords);
 
       if (usageError) {
-        console.error("Error tracking document usage:", usageError);
+        logger.error("Error tracking document usage", "analytics", {
+          error: { message: usageError.message },
+        });
       }
     }
 
     // 3. Update daily stats
     await updateDailyStats(data.userId, data.model);
   } catch (error) {
-    console.error("Analytics tracking error:", error);
+    logger.error("Analytics tracking error", "analytics", {
+      error: error instanceof Error ? { message: error.message } : { error: String(error) },
+    });
     // Don't throw - analytics should not break the main flow
   }
 }
@@ -135,11 +146,12 @@ export async function getAnalyticsSummary(userId: string): Promise<AnalyticsSumm
     .select("*", { count: "exact", head: true })
     .eq("user_id", userId);
 
-  // Get average response time
+  // Get average response time (capped at 10k rows for safety)
   const { data: avgData } = await supabase
     .from("analytics_queries")
     .select("response_time_ms")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .limit(10000);
 
   const avgResponseTime = avgData && avgData.length > 0
     ? Math.round(avgData.reduce((sum, r) => sum + (r.response_time_ms || 0), 0) / avgData.length)
@@ -161,11 +173,12 @@ export async function getAnalyticsSummary(userId: string): Promise<AnalyticsSumm
     count: d.total_queries,
   })) || [];
 
-  // Get top documents by usage
+  // Get top documents by usage (capped at 500 rows for safety)
   const { data: topDocsData } = await supabase
     .from("analytics_document_usage")
     .select("document_id, documents(filename)")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .limit(500);
 
   const docCounts = new Map<string, { filename: string; count: number }>();
   topDocsData?.forEach((d) => {
@@ -184,11 +197,12 @@ export async function getAnalyticsSummary(userId: string): Promise<AnalyticsSumm
     .sort((a, b) => b.usageCount - a.usageCount)
     .slice(0, 5);
 
-  // Get model usage
+  // Get model usage (capped at 365 rows for safety)
   const { data: modelData } = await supabase
     .from("analytics_daily_stats")
     .select("models_used")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .limit(365);
 
   const modelCounts = new Map<string, number>();
   modelData?.forEach((d) => {
